@@ -1,1 +1,23 @@
 @import "tailwindcss";
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.notch {
+  width: 100%;
+  height: 100%;
+  border-radius: 9999px;
+  background: #111;
+  transition: border-radius 140ms ease;
+}
+
+.notch-expanded {
+  border-radius: 18px;
+}
