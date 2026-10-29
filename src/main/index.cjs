@@ -2,22 +2,19 @@ const path = require('node:path');
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const {
   COLLAPSE_DELAY_MS,
-  EXPANDED_CORNER_RADIUS,
   EXPANDED_HEIGHT,
   EXPANDED_WIDTH,
   HOVER_POLL_INTERVAL_MS,
-  NO_NOTCH_PILL_CORNER_RADIUS,
-  NOTCH_CORNER_RADIUS,
+  NOTCH_WIDTH,
   TRANSITION_DURATION_MS,
-  getCollapsedSize,
+  getExpandedBounds,
   getHoverZone,
   getMenuBarHeight,
-  getWindowBounds,
-  isNotchedDisplay,
+  getNotchBounds,
+  getNotchShapePath,
   isPointInBounds
 } = require('../core/notchBounds.cjs');
 
-const EXPANDED_SIZE = { width: EXPANDED_WIDTH, height: EXPANDED_HEIGHT };
 let notchWindow;
 let hoverPoll;
 let expanded = false;
@@ -27,44 +24,39 @@ let outsideSince;
 function getGeometry() {
   const display = screen.getPrimaryDisplay();
   const menuBarHeight = getMenuBarHeight(display.bounds, display.workArea);
-  const hasNotch = isNotchedDisplay(display);
-  const collapsedSize = getCollapsedSize(menuBarHeight, hasNotch);
-  const collapsedBounds = getWindowBounds(display.bounds, collapsedSize);
-  const expandedBounds = getWindowBounds(display.bounds, EXPANDED_SIZE);
+  const notchBounds = getNotchBounds(display.bounds, menuBarHeight);
+  const expandedBounds = getExpandedBounds(display.bounds);
 
-  return { collapsedBounds, expandedBounds, hasNotch, menuBarHeight };
+  return {
+    displayBounds: display.bounds,
+    menuBarHeight,
+    notchBounds,
+    expandedBounds,
+    shapePath: getNotchShapePath(menuBarHeight)
+  };
 }
 
-function rendererUrlWithGeometry(url, geometry) {
-  const rendererUrl = new URL(url);
-  rendererUrl.searchParams.set('collapsedWidth', String(geometry.collapsedBounds.width));
-  rendererUrl.searchParams.set('collapsedHeight', String(geometry.collapsedBounds.height));
-  rendererUrl.searchParams.set('expandedWidth', String(EXPANDED_WIDTH));
-  rendererUrl.searchParams.set('expandedHeight', String(EXPANDED_HEIGHT));
-  rendererUrl.searchParams.set('notchRadius', String(NOTCH_CORNER_RADIUS));
-  rendererUrl.searchParams.set('pillRadius', String(NO_NOTCH_PILL_CORNER_RADIUS));
-  rendererUrl.searchParams.set('expandedRadius', String(EXPANDED_CORNER_RADIUS));
-  rendererUrl.searchParams.set('transitionDuration', String(TRANSITION_DURATION_MS));
-  rendererUrl.searchParams.set('hasNotch', String(geometry.hasNotch));
-  return rendererUrl.toString();
+function rendererQuery(geometry) {
+  return {
+    notchWidth: String(NOTCH_WIDTH),
+    expandedWidth: String(EXPANDED_WIDTH),
+    expandedHeight: String(EXPANDED_HEIGHT),
+    menuBarHeight: String(geometry.menuBarHeight),
+    transitionDuration: String(TRANSITION_DURATION_MS),
+    shapePath: geometry.shapePath
+  };
 }
 
 function loadRenderer(window, geometry) {
   if (process.env.VITE_DEV_SERVER_URL) {
-    window.loadURL(rendererUrlWithGeometry(process.env.VITE_DEV_SERVER_URL, geometry));
+    const url = new URL(process.env.VITE_DEV_SERVER_URL);
+    for (const [key, value] of Object.entries(rendererQuery(geometry))) {
+      url.searchParams.set(key, value);
+    }
+    window.loadURL(url.toString());
   } else {
     window.loadFile(path.join(__dirname, '../../dist/renderer/index.html'), {
-      query: {
-        collapsedWidth: String(geometry.collapsedBounds.width),
-        collapsedHeight: String(geometry.collapsedBounds.height),
-        expandedWidth: String(EXPANDED_WIDTH),
-        expandedHeight: String(EXPANDED_HEIGHT),
-        notchRadius: String(NOTCH_CORNER_RADIUS),
-        pillRadius: String(NO_NOTCH_PILL_CORNER_RADIUS),
-        expandedRadius: String(EXPANDED_CORNER_RADIUS),
-        transitionDuration: String(TRANSITION_DURATION_MS),
-        hasNotch: String(geometry.hasNotch)
-      }
+      query: rendererQuery(geometry)
     });
   }
 }
@@ -75,9 +67,9 @@ function sendRendererState(state) {
   }
 }
 
-function isCursorInHoverZone(point, geometry, isExpanded) {
+function isCursorInZone(point, geometry, isExpanded) {
   const zone = getHoverZone(
-    geometry.collapsedBounds,
+    geometry.notchBounds,
     geometry.expandedBounds,
     geometry.menuBarHeight,
     isExpanded
@@ -85,19 +77,38 @@ function isCursorInHoverZone(point, geometry, isExpanded) {
   return isPointInBounds(point, zone);
 }
 
+function showExpandedWindow(geometry) {
+  notchWindow.setBounds(geometry.expandedBounds);
+  notchWindow.showInactive();
+  notchWindow.setBounds(geometry.expandedBounds);
+
+  let actualBounds = notchWindow.getBounds();
+  console.log('[Igriss] expanded window and primary display bounds', {
+    windowBounds: actualBounds,
+    displayBounds: geometry.displayBounds
+  });
+
+  if (actualBounds.y !== geometry.displayBounds.y) {
+    console.warn('[Igriss] window y was clamped; retrying with setPosition');
+    notchWindow.setPosition(geometry.expandedBounds.x, geometry.displayBounds.y);
+    actualBounds = notchWindow.getBounds();
+    console.log('[Igriss] expanded window bounds after position retry', actualBounds);
+  }
+}
+
 function pollHover() {
   if (!notchWindow || notchWindow.isDestroyed()) return;
 
   const geometry = getGeometry();
   const cursor = screen.getCursorScreenPoint();
-  const insideZone = isCursorInHoverZone(cursor, geometry, expanded);
+  const insideZone = isCursorInZone(cursor, geometry, expanded);
 
   if (insideZone) {
     outsideSince = undefined;
 
     if (!expanded) {
       expanded = true;
-      notchWindow.setBounds(geometry.expandedBounds);
+      showExpandedWindow(geometry);
       sendRendererState('open');
     } else if (closing) {
       closing = false;
@@ -121,7 +132,7 @@ function handleCollapseComplete(event) {
 
   const geometry = getGeometry();
   const cursor = screen.getCursorScreenPoint();
-  if (isCursorInHoverZone(cursor, geometry, true)) {
+  if (isCursorInZone(cursor, geometry, true)) {
     closing = false;
     outsideSince = undefined;
     sendRendererState('open');
@@ -130,7 +141,7 @@ function handleCollapseComplete(event) {
 
   expanded = false;
   closing = false;
-  notchWindow.setBounds(geometry.collapsedBounds);
+  notchWindow.hide();
 }
 
 function createWindow() {
@@ -140,15 +151,20 @@ function createWindow() {
   outsideSince = undefined;
 
   notchWindow = new BrowserWindow({
-    ...geometry.collapsedBounds,
+    ...geometry.expandedBounds,
     show: false,
     frame: false,
     transparent: true,
-    backgroundColor: '#00000000',
+    hasShadow: false,
     resizable: false,
-    focusable: false,
+    movable: false,
+    fullscreenable: false,
     skipTaskbar: true,
-    alwaysOnTop: true,
+    enableLargerThanScreen: true,
+    roundedCorners: false,
+    backgroundColor: '#00000000',
+    type: 'panel',
+    focusable: false,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.cjs'),
       contextIsolation: true,
@@ -157,12 +173,15 @@ function createWindow() {
   });
 
   notchWindow.setAlwaysOnTop(true, 'screen-saver');
-  notchWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  notchWindow.setVisibleOnAllWorkspaces(true, {
+    visibleOnFullScreen: true,
+    skipTransformProcessType: true
+  });
+  notchWindow.hide();
   loadRenderer(notchWindow, geometry);
 
   notchWindow.once('ready-to-show', () => {
     if (!notchWindow || notchWindow.isDestroyed()) return;
-    notchWindow.showInactive();
     hoverPoll = setInterval(pollHover, HOVER_POLL_INTERVAL_MS);
   });
 
@@ -176,8 +195,8 @@ function createWindow() {
 ipcMain.on('notch:collapse-complete', handleCollapseComplete);
 
 app.whenReady().then(() => {
-  if (process.platform === 'darwin') app.dock.hide();
   createWindow();
+  if (process.platform === 'darwin') app.dock.hide();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

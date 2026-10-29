@@ -3,28 +3,22 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 
 const query = new URLSearchParams(window.location.search);
-const collapsedWidth = Number(query.get('collapsedWidth')) || 200;
-const collapsedHeight = Number(query.get('collapsedHeight')) || 24;
+const notchWidth = Number(query.get('notchWidth')) || 200;
 const expandedWidth = Number(query.get('expandedWidth')) || 480;
 const expandedHeight = Number(query.get('expandedHeight')) || 240;
-const notchRadius = Number(query.get('notchRadius')) || 14;
-const pillRadius = Number(query.get('pillRadius')) || 6;
-const expandedRadius = Number(query.get('expandedRadius')) || 20;
-const hasNotch = query.get('hasNotch') !== 'false';
+const menuBarHeight = Number(query.get('menuBarHeight')) || 24;
 const transitionDuration = Number(query.get('transitionDuration')) || 200;
+const shapePath = query.get('shapePath') || '';
 
 function App() {
   const [isOpen, setIsOpen] = React.useState(false);
   const [contentVisible, setContentVisible] = React.useState(false);
   const collapsePending = React.useRef(false);
-  const rootStyle = {
-    '--collapsed-width': `${collapsedWidth}px`,
-    '--collapsed-height': `${collapsedHeight}px`,
+  const style = {
+    '--notch-width': `${notchWidth}px`,
     '--expanded-width': `${expandedWidth}px`,
     '--expanded-height': `${expandedHeight}px`,
-    '--notch-radius': `${notchRadius}px`,
-    '--pill-radius': `${pillRadius}px`,
-    '--expanded-radius': `${expandedRadius}px`,
+    '--menu-bar-height': `${menuBarHeight}px`,
     '--transition-duration': `${transitionDuration}ms`
   };
 
@@ -38,39 +32,39 @@ function App() {
     });
     const stopClose = notchApi.onClose(() => {
       collapsePending.current = true;
+      setContentVisible(false);
       setIsOpen(false);
     });
+
     return () => {
       stopOpen();
       stopClose();
     };
   }, []);
 
-  React.useEffect(() => {
-    if (!isOpen && !contentVisible && collapsePending.current) {
-      collapsePending.current = false;
-      window.igriss?.notch.collapseComplete();
-    }
-  }, [isOpen, contentVisible]);
-
   function handleTransitionEnd(event) {
-    if (event.target !== event.currentTarget || event.propertyName !== 'height') return;
+    if (event.target !== event.currentTarget || event.propertyName !== 'transform') return;
 
     if (isOpen) {
       setContentVisible(true);
-    } else {
-      setContentVisible(false);
+    } else if (collapsePending.current) {
+      collapsePending.current = false;
+      window.igriss?.notch.collapseComplete();
     }
   }
 
   return (
-    <main className="window-root" style={rootStyle}>
-      <div
-        className={`notch ${hasNotch ? 'notched' : 'pill'} ${isOpen ? 'open' : ''}`}
+    <main className="window-root" style={style}>
+      <svg
+        className={`notch-shape ${isOpen ? 'open' : ''}`}
+        viewBox={`0 0 ${expandedWidth} ${expandedHeight}`}
+        preserveAspectRatio="none"
+        aria-hidden="true"
         onTransitionEnd={handleTransitionEnd}
       >
-        {contentVisible ? <section className="notch-content" /> : null}
-      </div>
+        <path d={shapePath} fill="#000" />
+      </svg>
+      {contentVisible ? <section className="notch-content" /> : null}
     </main>
   );
 }

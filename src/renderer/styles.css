@@ -15,41 +15,34 @@ body,
   width: 100%;
   height: 100%;
   overflow: hidden;
+  border: 0;
   background: transparent;
+  box-shadow: none;
 }
 
-.notch {
+.notch-shape {
   position: absolute;
   top: 0;
-  left: 50%;
-  width: var(--collapsed-width);
-  height: var(--collapsed-height);
-  transform: translateX(-50%);
-  overflow: hidden;
-  border: 0;
-  background: #000;
-  transition:
-    width var(--transition-duration) ease,
-    height var(--transition-duration) ease,
-    border-radius var(--transition-duration) ease;
+  left: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scaleY(0);
+  transform-origin: top center;
+  transition: transform var(--transition-duration) ease;
+  pointer-events: none;
 }
 
-.notch.notched {
-  border-radius: 0 0 var(--notch-radius) var(--notch-radius);
-}
-
-.notch.pill {
-  border-radius: 0 0 var(--pill-radius) var(--pill-radius);
-}
-
-.notch.open {
-  width: var(--expanded-width);
-  height: var(--expanded-height);
-  border-radius: 0 0 var(--expanded-radius) var(--expanded-radius);
+.notch-shape.open {
+  transform: scaleY(1);
 }
 
 .notch-content {
+  position: absolute;
+  z-index: 1;
+  top: var(--menu-bar-height);
+  left: 0;
   width: 100%;
-  height: calc(100% - var(--collapsed-height));
-  margin-top: var(--collapsed-height);
+  height: calc(100% - var(--menu-bar-height));
+  background: transparent;
 }
