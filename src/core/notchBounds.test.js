@@ -3,81 +3,108 @@ import { describe, expect, it } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const {
-  COLLAPSE_MARGIN,
-  EXPANDED_HEIGHT,
-  EXPANDED_WIDTH,
-  HOVER_MARGIN,
+  COLLAPSE_DELAY_MS,
+  COLLAPSE_DURATION_MS,
+  EXPAND_DURATION_MS,
+  HOVER_POLL_INTERVAL_MS,
+  NOTCH_BOTTOM_RADIUS,
+  NOTCH_HEIGHT,
+  NOTCH_SHAPE_PATH,
+  NOTCH_TOP_FLARE,
   NOTCH_WIDTH,
-  getExpandedBounds,
+  NOTCH_WINDOW_WIDTH,
+  PANEL_BOTTOM_RADIUS,
+  PANEL_HEIGHT,
+  PANEL_HOVER_MARGIN,
+  PANEL_SHAPE_PATH,
+  PANEL_WIDTH,
+  PANEL_WINDOW_WIDTH,
+  TOP_ROW_CENTER_WIDTH,
   getHoverZone,
-  getMenuBarHeight,
   getNotchBounds,
-  getNotchShapePath,
+  getPanelBounds,
+  getShapePath,
   isPointInBounds
 } = require('./notchBounds.cjs');
 
-describe('notch geometry', () => {
-  const displayBounds = { x: 100, y: 24, width: 1512, height: 982 };
+describe('notch and panel geometry', () => {
+  const displayBounds = { x: 0, y: 0, width: 1512, height: 982 };
 
-  it('uses the primary display work-area inset as the menu bar height', () => {
-    expect(
-      getMenuBarHeight(displayBounds, { x: 100, y: 54, width: 1512, height: 952 })
-    ).toBe(30);
+  it('keeps the specified MacBook Pro point dimensions as named constants', () => {
+    expect({ NOTCH_WIDTH, NOTCH_HEIGHT, NOTCH_BOTTOM_RADIUS, NOTCH_TOP_FLARE }).toEqual({
+      NOTCH_WIDTH: 185,
+      NOTCH_HEIGHT: 32,
+      NOTCH_BOTTOM_RADIUS: 9,
+      NOTCH_TOP_FLARE: 5.5
+    });
+    expect({ PANEL_WIDTH, PANEL_HEIGHT, PANEL_BOTTOM_RADIUS }).toEqual({
+      PANEL_WIDTH: 404,
+      PANEL_HEIGHT: 123,
+      PANEL_BOTTOM_RADIUS: 32
+    });
+    expect({ EXPAND_DURATION_MS, COLLAPSE_DURATION_MS, COLLAPSE_DELAY_MS }).toEqual({
+      EXPAND_DURATION_MS: 250,
+      COLLAPSE_DURATION_MS: 200,
+      COLLAPSE_DELAY_MS: 300
+    });
+    expect(HOVER_POLL_INTERVAL_MS).toBe(50);
+    expect(TOP_ROW_CENTER_WIDTH).toBe(NOTCH_WIDTH + NOTCH_TOP_FLARE * 2 + 24);
   });
 
-  it('centers a notch-sized top row and the full expanded bounds on display bounds', () => {
-    const menuBarHeight = 30;
-
-    expect(getNotchBounds(displayBounds, menuBarHeight)).toEqual({
-      x: 756,
-      y: 24,
-      width: NOTCH_WIDTH,
-      height: menuBarHeight
+  it('centers the idle and panel windows on display bounds at the top edge', () => {
+    expect(getNotchBounds(displayBounds)).toEqual({
+      x: 658,
+      y: 0,
+      width: NOTCH_WINDOW_WIDTH,
+      height: NOTCH_HEIGHT
     });
-    expect(getExpandedBounds(displayBounds)).toEqual({
-      x: 616,
-      y: 24,
-      width: EXPANDED_WIDTH,
-      height: EXPANDED_HEIGHT
+    expect(getPanelBounds(displayBounds)).toEqual({
+      x: 548.5,
+      y: 0,
+      width: PANEL_WINDOW_WIDTH,
+      height: PANEL_HEIGHT
     });
   });
 
-  it('starts the solid shape with an exact NOTCH_WIDTH row and curves into the panel', () => {
-    const path = getNotchShapePath(30);
+  it('creates a 185px notch body with 5.5px top flares and the panel endpoints', () => {
+    expect(NOTCH_SHAPE_PATH.startsWith('M 109.5 0 H 305.5')).toBe(true);
+    expect(PANEL_SHAPE_PATH.startsWith('M 0 0 H 415')).toBe(true);
+    expect(NOTCH_SHAPE_PATH).toContain(`V ${NOTCH_HEIGHT - NOTCH_BOTTOM_RADIUS}`);
+    expect(PANEL_SHAPE_PATH).toContain(`V ${PANEL_HEIGHT - PANEL_BOTTOM_RADIUS}`);
+    expect(getShapePath(NOTCH_WIDTH, NOTCH_HEIGHT, NOTCH_BOTTOM_RADIUS)).toBe(NOTCH_SHAPE_PATH);
 
-    expect(path.startsWith(`M 140 0 H 340 V 30 `)).toBe(true);
-    expect(path).toContain(`L ${EXPANDED_WIDTH} ${EXPANDED_HEIGHT - 20}`);
-    expect(path).toContain('Q 0 240 0 220');
+    const tokenize = (path) => path.match(/[A-Za-z]|-?(?:\d+\.?\d*|\.\d+)/g);
+    const notchTokens = tokenize(NOTCH_SHAPE_PATH);
+    const panelTokens = tokenize(PANEL_SHAPE_PATH);
+    expect(notchTokens).toHaveLength(panelTokens.length);
+    expect(notchTokens.filter((token) => /^[A-Za-z]$/.test(token))).toEqual(
+      panelTokens.filter((token) => /^[A-Za-z]$/.test(token))
+    );
   });
 });
 
 describe('notch hover zones', () => {
   const displayBounds = { x: 0, y: 0, width: 1512, height: 982 };
-  const notchBounds = getNotchBounds(displayBounds, 30);
-  const expandedBounds = getExpandedBounds(displayBounds);
+  const notchBounds = getNotchBounds(displayBounds);
+  const panelBounds = getPanelBounds(displayBounds);
 
-  it('keeps the closed hover zone centered at NOTCH_WIDTH plus 40px', () => {
-    const zone = getHoverZone(notchBounds, expandedBounds, 30, false);
+  it('uses the visible notch bounds as its idle hover zone', () => {
+    const zone = getHoverZone(notchBounds, panelBounds, false);
 
-    expect(zone).toEqual({
-      x: notchBounds.x - HOVER_MARGIN,
-      y: 0,
-      width: NOTCH_WIDTH + 40,
-      height: 30
-    });
-    expect(isPointInBounds({ x: zone.x, y: 29 }, zone)).toBe(true);
-    expect(isPointInBounds({ x: zone.x - 1, y: 29 }, zone)).toBe(false);
-    expect(isPointInBounds({ x: zone.x + 40, y: 30 }, zone)).toBe(false);
+    expect(zone).toEqual(notchBounds);
+    expect(isPointInBounds({ x: notchBounds.x, y: 0 }, zone)).toBe(true);
+    expect(isPointInBounds({ x: notchBounds.x - 1, y: 0 }, zone)).toBe(false);
+    expect(isPointInBounds({ x: notchBounds.x, y: NOTCH_HEIGHT }, zone)).toBe(false);
   });
 
-  it('adds a 20px margin around the expanded window for collapse detection', () => {
-    const zone = getHoverZone(notchBounds, expandedBounds, 30, true);
+  it('extends the expanded panel hover zone by the named 20px margin', () => {
+    const zone = getHoverZone(notchBounds, panelBounds, true);
 
     expect(zone).toEqual({
-      x: expandedBounds.x - COLLAPSE_MARGIN,
-      y: expandedBounds.y - COLLAPSE_MARGIN,
-      width: expandedBounds.width + COLLAPSE_MARGIN * 2,
-      height: expandedBounds.height + COLLAPSE_MARGIN * 2
+      x: panelBounds.x - PANEL_HOVER_MARGIN,
+      y: panelBounds.y - PANEL_HOVER_MARGIN,
+      width: panelBounds.width + PANEL_HOVER_MARGIN * 2,
+      height: panelBounds.height + PANEL_HOVER_MARGIN * 2
     });
     expect(isPointInBounds({ x: zone.x, y: zone.y }, zone)).toBe(true);
     expect(isPointInBounds({ x: zone.x + zone.width, y: zone.y }, zone)).toBe(false);

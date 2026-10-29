@@ -1,51 +1,48 @@
-const NOTCH_WIDTH = 200;
-const EXPANDED_WIDTH = 480;
-const EXPANDED_HEIGHT = 240;
-const HOVER_MARGIN = 20;
-const COLLAPSE_MARGIN = 20;
+const NOTCH_WIDTH = 185;
+const NOTCH_HEIGHT = 32;
+const NOTCH_BOTTOM_RADIUS = 9;
+const NOTCH_TOP_FLARE = 5.5;
+const PANEL_WIDTH = 404;
+const PANEL_HEIGHT = 123;
+const PANEL_BOTTOM_RADIUS = 32;
+const TOP_ROW_CENTER_CLEARANCE = 24;
+const TOP_ROW_CENTER_WIDTH = NOTCH_WIDTH + NOTCH_TOP_FLARE * 2 + TOP_ROW_CENTER_CLEARANCE;
+const PANEL_HOVER_MARGIN = 20;
+const EXPAND_DURATION_MS = 250;
+const COLLAPSE_DURATION_MS = 200;
 const COLLAPSE_DELAY_MS = 300;
 const HOVER_POLL_INTERVAL_MS = 50;
-const TRANSITION_DURATION_MS = 200;
-const BOTTOM_CORNER_RADIUS = 20;
-const EAR_CURVE_HEIGHT = 48;
+const CONTENT_FADE_DURATION_MS = 120;
 
-function getMenuBarHeight(displayBounds, workAreaBounds) {
-  return Math.max(0, workAreaBounds.y - displayBounds.y);
-}
+const NOTCH_WINDOW_WIDTH = NOTCH_WIDTH + NOTCH_TOP_FLARE * 2;
+const PANEL_WINDOW_WIDTH = PANEL_WIDTH + NOTCH_TOP_FLARE * 2;
 
-function getNotchBounds(displayBounds, menuBarHeight) {
+function getNotchBounds(displayBounds) {
   return {
-    x: Math.round(displayBounds.x + (displayBounds.width - NOTCH_WIDTH) / 2),
+    x: displayBounds.x + (displayBounds.width - NOTCH_WINDOW_WIDTH) / 2,
     y: displayBounds.y,
-    width: NOTCH_WIDTH,
-    height: menuBarHeight
+    width: NOTCH_WINDOW_WIDTH,
+    height: NOTCH_HEIGHT
   };
 }
 
-function getExpandedBounds(displayBounds) {
+function getPanelBounds(displayBounds) {
   return {
-    x: Math.round(displayBounds.x + (displayBounds.width - EXPANDED_WIDTH) / 2),
+    x: displayBounds.x + (displayBounds.width - PANEL_WINDOW_WIDTH) / 2,
     y: displayBounds.y,
-    width: EXPANDED_WIDTH,
-    height: EXPANDED_HEIGHT
+    width: PANEL_WINDOW_WIDTH,
+    height: PANEL_HEIGHT
   };
 }
 
-function getHoverZone(notchBounds, expandedBounds, menuBarHeight, expanded) {
-  if (expanded) {
-    return {
-      x: expandedBounds.x - COLLAPSE_MARGIN,
-      y: expandedBounds.y - COLLAPSE_MARGIN,
-      width: expandedBounds.width + COLLAPSE_MARGIN * 2,
-      height: expandedBounds.height + COLLAPSE_MARGIN * 2
-    };
-  }
+function getHoverZone(notchBounds, panelBounds, expanded) {
+  if (!expanded) return { ...notchBounds };
 
   return {
-    x: notchBounds.x - HOVER_MARGIN,
-    y: notchBounds.y,
-    width: notchBounds.width + HOVER_MARGIN * 2,
-    height: menuBarHeight
+    x: panelBounds.x - PANEL_HOVER_MARGIN,
+    y: panelBounds.y - PANEL_HOVER_MARGIN,
+    width: panelBounds.width + PANEL_HOVER_MARGIN * 2,
+    height: panelBounds.height + PANEL_HOVER_MARGIN * 2
   };
 }
 
@@ -58,44 +55,54 @@ function isPointInBounds(point, bounds) {
   );
 }
 
-function getNotchShapePath(menuBarHeight) {
-  const left = (EXPANDED_WIDTH - NOTCH_WIDTH) / 2;
-  const right = left + NOTCH_WIDTH;
-  const earBottom = menuBarHeight + EAR_CURVE_HEIGHT;
-  const bottom = EXPANDED_HEIGHT - BOTTOM_CORNER_RADIUS;
+function getShapePath(baseWidth, height, bottomRadius) {
+  const viewWidth = PANEL_WINDOW_WIDTH;
+  const left = (viewWidth - baseWidth) / 2;
+  const right = left + baseWidth;
+  const outerLeft = left - NOTCH_TOP_FLARE;
+  const outerRight = right + NOTCH_TOP_FLARE;
+  const bottom = height - bottomRadius;
 
   return [
-    `M ${left} 0`,
-    `H ${right}`,
-    `V ${menuBarHeight}`,
-    `C ${right} ${menuBarHeight + 12} ${right} ${menuBarHeight + 24} ${right + 24} ${menuBarHeight + 24}`,
-    `C ${right + 60} ${menuBarHeight + 24} ${EXPANDED_WIDTH - 40} ${menuBarHeight + 36} ${EXPANDED_WIDTH} ${earBottom}`,
-    `L ${EXPANDED_WIDTH} ${bottom}`,
-    `Q ${EXPANDED_WIDTH} ${EXPANDED_HEIGHT} ${EXPANDED_WIDTH - BOTTOM_CORNER_RADIUS} ${EXPANDED_HEIGHT}`,
-    `H ${BOTTOM_CORNER_RADIUS}`,
-    `Q 0 ${EXPANDED_HEIGHT} 0 ${bottom}`,
-    `L 0 ${earBottom}`,
-    `C 40 ${menuBarHeight + 36} ${left - 60} ${menuBarHeight + 24} ${left - 24} ${menuBarHeight + 24}`,
-    `C ${left} ${menuBarHeight + 24} ${left} ${menuBarHeight + 12} ${left} ${menuBarHeight}`,
+    `M ${outerLeft} 0`,
+    `H ${outerRight}`,
+    `C ${outerRight} 0 ${right} 0 ${right} ${NOTCH_TOP_FLARE}`,
+    `V ${bottom}`,
+    `Q ${right} ${height} ${right - bottomRadius} ${height}`,
+    `H ${left + bottomRadius}`,
+    `Q ${left} ${height} ${left} ${bottom}`,
+    `V ${NOTCH_TOP_FLARE}`,
+    `C ${left} 0 ${outerLeft} 0 ${outerLeft} 0`,
     'Z'
   ].join(' ');
 }
 
+const NOTCH_SHAPE_PATH = getShapePath(NOTCH_WIDTH, NOTCH_HEIGHT, NOTCH_BOTTOM_RADIUS);
+const PANEL_SHAPE_PATH = getShapePath(PANEL_WIDTH, PANEL_HEIGHT, PANEL_BOTTOM_RADIUS);
+
 module.exports = {
-  BOTTOM_CORNER_RADIUS,
   COLLAPSE_DELAY_MS,
-  COLLAPSE_MARGIN,
-  EAR_CURVE_HEIGHT,
-  EXPANDED_HEIGHT,
-  EXPANDED_WIDTH,
-  HOVER_MARGIN,
+  COLLAPSE_DURATION_MS,
+  CONTENT_FADE_DURATION_MS,
+  EXPAND_DURATION_MS,
   HOVER_POLL_INTERVAL_MS,
+  NOTCH_BOTTOM_RADIUS,
+  NOTCH_HEIGHT,
+  NOTCH_SHAPE_PATH,
+  NOTCH_TOP_FLARE,
   NOTCH_WIDTH,
-  TRANSITION_DURATION_MS,
-  getExpandedBounds,
+  NOTCH_WINDOW_WIDTH,
+  PANEL_BOTTOM_RADIUS,
+  PANEL_HEIGHT,
+  PANEL_HOVER_MARGIN,
+  PANEL_SHAPE_PATH,
+  PANEL_WIDTH,
+  PANEL_WINDOW_WIDTH,
+  TOP_ROW_CENTER_CLEARANCE,
+  TOP_ROW_CENTER_WIDTH,
   getHoverZone,
-  getMenuBarHeight,
   getNotchBounds,
-  getNotchShapePath,
+  getPanelBounds,
+  getShapePath,
   isPointInBounds
 };

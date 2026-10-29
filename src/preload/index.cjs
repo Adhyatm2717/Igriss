@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('igriss', {
     },
     collapseComplete() {
       ipcRenderer.send('notch:collapse-complete');
+    },
+    requestInputFocus() {
+      ipcRenderer.send('notch:input-focus');
+    },
+    releaseInputFocus() {
+      ipcRenderer.send('notch:input-blur');
     }
   }
 });

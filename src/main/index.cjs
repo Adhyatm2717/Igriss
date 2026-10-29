@@ -2,16 +2,20 @@ const path = require('node:path');
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const {
   COLLAPSE_DELAY_MS,
-  EXPANDED_HEIGHT,
-  EXPANDED_WIDTH,
+  COLLAPSE_DURATION_MS,
+  CONTENT_FADE_DURATION_MS,
+  EXPAND_DURATION_MS,
   HOVER_POLL_INTERVAL_MS,
-  NOTCH_WIDTH,
-  TRANSITION_DURATION_MS,
-  getExpandedBounds,
+  NOTCH_HEIGHT,
+  NOTCH_SHAPE_PATH,
+  PANEL_WIDTH,
+  PANEL_HEIGHT,
+  PANEL_SHAPE_PATH,
+  PANEL_WINDOW_WIDTH,
+  TOP_ROW_CENTER_WIDTH,
   getHoverZone,
-  getMenuBarHeight,
   getNotchBounds,
-  getNotchShapePath,
+  getPanelBounds,
   isPointInBounds
 } = require('../core/notchBounds.cjs');
 
@@ -23,27 +27,24 @@ let outsideSince;
 
 function getGeometry() {
   const display = screen.getPrimaryDisplay();
-  const menuBarHeight = getMenuBarHeight(display.bounds, display.workArea);
-  const notchBounds = getNotchBounds(display.bounds, menuBarHeight);
-  const expandedBounds = getExpandedBounds(display.bounds);
+  const notchBounds = getNotchBounds(display.bounds);
+  const panelBounds = getPanelBounds(display.bounds);
 
-  return {
-    displayBounds: display.bounds,
-    menuBarHeight,
-    notchBounds,
-    expandedBounds,
-    shapePath: getNotchShapePath(menuBarHeight)
-  };
+  return { displayBounds: display.bounds, notchBounds, panelBounds };
 }
 
 function rendererQuery(geometry) {
   return {
-    notchWidth: String(NOTCH_WIDTH),
-    expandedWidth: String(EXPANDED_WIDTH),
-    expandedHeight: String(EXPANDED_HEIGHT),
-    menuBarHeight: String(geometry.menuBarHeight),
-    transitionDuration: String(TRANSITION_DURATION_MS),
-    shapePath: geometry.shapePath
+    notchHeight: String(NOTCH_HEIGHT),
+    panelWidth: String(PANEL_WIDTH),
+    panelShapeWidth: String(PANEL_WINDOW_WIDTH),
+    panelHeight: String(PANEL_HEIGHT),
+    centerZoneWidth: String(TOP_ROW_CENTER_WIDTH),
+    expandDuration: String(EXPAND_DURATION_MS),
+    collapseDuration: String(COLLAPSE_DURATION_MS),
+    contentFadeDuration: String(CONTENT_FADE_DURATION_MS),
+    notchShape: NOTCH_SHAPE_PATH,
+    panelShape: PANEL_SHAPE_PATH
   };
 }
 
@@ -67,33 +68,8 @@ function sendRendererState(state) {
   }
 }
 
-function isCursorInZone(point, geometry, isExpanded) {
-  const zone = getHoverZone(
-    geometry.notchBounds,
-    geometry.expandedBounds,
-    geometry.menuBarHeight,
-    isExpanded
-  );
-  return isPointInBounds(point, zone);
-}
-
-function showExpandedWindow(geometry) {
-  notchWindow.setBounds(geometry.expandedBounds);
-  notchWindow.showInactive();
-  notchWindow.setBounds(geometry.expandedBounds);
-
-  let actualBounds = notchWindow.getBounds();
-  console.log('[Igriss] expanded window and primary display bounds', {
-    windowBounds: actualBounds,
-    displayBounds: geometry.displayBounds
-  });
-
-  if (actualBounds.y !== geometry.displayBounds.y) {
-    console.warn('[Igriss] window y was clamped; retrying with setPosition');
-    notchWindow.setPosition(geometry.expandedBounds.x, geometry.displayBounds.y);
-    actualBounds = notchWindow.getBounds();
-    console.log('[Igriss] expanded window bounds after position retry', actualBounds);
-  }
+function getHoverBounds(geometry, isExpanded) {
+  return getHoverZone(geometry.notchBounds, geometry.panelBounds, isExpanded);
 }
 
 function pollHover() {
@@ -101,14 +77,17 @@ function pollHover() {
 
   const geometry = getGeometry();
   const cursor = screen.getCursorScreenPoint();
-  const insideZone = isCursorInZone(cursor, geometry, expanded);
+  const insideZone = isPointInBounds(cursor, getHoverBounds(geometry, expanded));
 
   if (insideZone) {
     outsideSince = undefined;
-
     if (!expanded) {
       expanded = true;
-      showExpandedWindow(geometry);
+      closing = false;
+      notchWindow.setBounds(geometry.panelBounds);
+      notchWindow.setIgnoreMouseEvents(false);
+      notchWindow.showInactive();
+      notchWindow.setBounds(geometry.panelBounds);
       sendRendererState('open');
     } else if (closing) {
       closing = false;
@@ -132,7 +111,7 @@ function handleCollapseComplete(event) {
 
   const geometry = getGeometry();
   const cursor = screen.getCursorScreenPoint();
-  if (isCursorInZone(cursor, geometry, true)) {
+  if (isPointInBounds(cursor, getHoverBounds(geometry, true))) {
     closing = false;
     outsideSince = undefined;
     sendRendererState('open');
@@ -141,7 +120,20 @@ function handleCollapseComplete(event) {
 
   expanded = false;
   closing = false;
-  notchWindow.hide();
+  notchWindow.setBounds(geometry.notchBounds);
+  notchWindow.setFocusable(false);
+  notchWindow.setIgnoreMouseEvents(true, { forward: true });
+}
+
+function handleInputFocus(event) {
+  if (!notchWindow || event.sender !== notchWindow.webContents || !expanded) return;
+  notchWindow.setFocusable(true);
+  notchWindow.focus();
+}
+
+function handleInputBlur(event) {
+  if (!notchWindow || event.sender !== notchWindow.webContents) return;
+  notchWindow.setFocusable(false);
 }
 
 function createWindow() {
@@ -151,7 +143,7 @@ function createWindow() {
   outsideSince = undefined;
 
   notchWindow = new BrowserWindow({
-    ...geometry.expandedBounds,
+    ...geometry.notchBounds,
     show: false,
     frame: false,
     transparent: true,
@@ -177,11 +169,12 @@ function createWindow() {
     visibleOnFullScreen: true,
     skipTransformProcessType: true
   });
-  notchWindow.hide();
+  notchWindow.setIgnoreMouseEvents(true, { forward: true });
   loadRenderer(notchWindow, geometry);
 
   notchWindow.once('ready-to-show', () => {
     if (!notchWindow || notchWindow.isDestroyed()) return;
+    notchWindow.showInactive();
     hoverPoll = setInterval(pollHover, HOVER_POLL_INTERVAL_MS);
   });
 
@@ -193,11 +186,18 @@ function createWindow() {
 }
 
 ipcMain.on('notch:collapse-complete', handleCollapseComplete);
+ipcMain.on('notch:input-focus', handleInputFocus);
+ipcMain.on('notch:input-blur', handleInputBlur);
 
 app.whenReady().then(() => {
+  const { width, height } = screen.getPrimaryDisplay().bounds;
+  console.log('[Igriss] primary display size in points', { width, height });
+  if (width !== 1512 || height !== 982) {
+    console.warn('[Igriss] geometry was specified for 1512x982 points');
+  }
+
   createWindow();
   if (process.platform === 'darwin') app.dock.hide();
-
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
