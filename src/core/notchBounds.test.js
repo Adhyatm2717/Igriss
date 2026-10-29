@@ -13,6 +13,9 @@ const {
   NOTCH_TOP_FLARE,
   NOTCH_WIDTH,
   NOTCH_WINDOW_WIDTH,
+  NO_NOTCH_TAB_HEIGHT,
+  NO_NOTCH_TAB_SHAPE_PATH,
+  NO_NOTCH_TAB_WIDTH,
   PANEL_BOTTOM_RADIUS,
   PANEL_HEIGHT,
   PANEL_HOVER_MARGIN,
@@ -21,9 +24,12 @@ const {
   PANEL_WINDOW_WIDTH,
   TOP_ROW_CENTER_WIDTH,
   getHoverZone,
+  getIdleHoverBounds,
   getNotchBounds,
+  getNoNotchBounds,
   getPanelBounds,
   getShapePath,
+  isNotchedDisplay,
   isPointInBounds
 } = require('./notchBounds.cjs');
 
@@ -64,6 +70,29 @@ describe('notch and panel geometry', () => {
       width: PANEL_WINDOW_WIDTH,
       height: PANEL_HEIGHT
     });
+  });
+
+  it('uses a small centered tab for displays without a notch', () => {
+    const display = { internal: false, bounds: displayBounds };
+    expect(isNotchedDisplay(display)).toBe(false);
+    expect(getNoNotchBounds(displayBounds)).toEqual({
+      x: 548.5,
+      y: 0,
+      width: PANEL_WINDOW_WIDTH,
+      height: NO_NOTCH_TAB_HEIGHT
+    });
+    expect(getIdleHoverBounds(displayBounds, false)).toEqual({
+      x: 724,
+      y: 0,
+      width: NO_NOTCH_TAB_WIDTH,
+      height: NO_NOTCH_TAB_HEIGHT
+    });
+    expect(NO_NOTCH_TAB_SHAPE_PATH).toContain(`V ${NO_NOTCH_TAB_HEIGHT - 5}`);
+  });
+
+  it('recognizes the built-in notch display by its point dimensions', () => {
+    expect(isNotchedDisplay({ internal: true, bounds: displayBounds })).toBe(true);
+    expect(isNotchedDisplay({ internal: true, bounds: { x: 0, y: 0, width: 1440, height: 900 } })).toBe(false);
   });
 
   it('creates a 185px notch body with 5.5px top flares and the panel endpoints', () => {

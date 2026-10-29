@@ -1,5 +1,5 @@
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, Tray } = require('electron');
 const {
   COLLAPSE_DELAY_MS,
   COLLAPSE_DURATION_MS,
@@ -8,6 +8,11 @@ const {
   HOVER_POLL_INTERVAL_MS,
   NOTCH_HEIGHT,
   NOTCH_SHAPE_PATH,
+  NO_NOTCH_TAB_HEIGHT,
+  NO_NOTCH_TAB_SHAPE_PATH,
+  getIdleHoverBounds,
+  getNoNotchBounds,
+  isNotchedDisplay,
   PANEL_WIDTH,
   PANEL_HEIGHT,
   PANEL_SHAPE_PATH,
@@ -20,17 +25,22 @@ const {
 } = require('../core/notchBounds.cjs');
 
 let notchWindow;
+let tray;
+let trayMenu;
 let hoverPoll;
 let expanded = false;
 let closing = false;
 let outsideSince;
+let focusRequested = false;
 
 function getGeometry() {
   const display = screen.getPrimaryDisplay();
-  const notchBounds = getNotchBounds(display.bounds);
+  const hasNotch = isNotchedDisplay(display);
+  const notchBounds = hasNotch ? getNotchBounds(display.bounds) : getNoNotchBounds(display.bounds);
+  const idleHoverBounds = getIdleHoverBounds(display.bounds, hasNotch);
   const panelBounds = getPanelBounds(display.bounds);
 
-  return { displayBounds: display.bounds, notchBounds, panelBounds };
+  return { displayBounds: display.bounds, hasNotch, idleHoverBounds, notchBounds, panelBounds };
 }
 
 function rendererQuery(geometry) {
@@ -44,6 +54,8 @@ function rendererQuery(geometry) {
     collapseDuration: String(COLLAPSE_DURATION_MS),
     contentFadeDuration: String(CONTENT_FADE_DURATION_MS),
     notchShape: NOTCH_SHAPE_PATH,
+    idleShape: geometry.hasNotch ? NOTCH_SHAPE_PATH : NO_NOTCH_TAB_SHAPE_PATH,
+    idleShapeHeight: String(geometry.hasNotch ? NOTCH_HEIGHT : NO_NOTCH_TAB_HEIGHT),
     panelShape: PANEL_SHAPE_PATH
   };
 }
@@ -62,14 +74,48 @@ function loadRenderer(window, geometry) {
   }
 }
 
-function sendRendererState(state) {
+function sendRendererState(state, payload) {
   if (notchWindow && !notchWindow.isDestroyed()) {
-    notchWindow.webContents.send(`notch:${state}`);
+    notchWindow.webContents.send(`notch:${state}`, payload);
   }
 }
 
 function getHoverBounds(geometry, isExpanded) {
-  return getHoverZone(geometry.notchBounds, geometry.panelBounds, isExpanded);
+  return isExpanded
+    ? getHoverZone(geometry.notchBounds, geometry.panelBounds, true)
+    : geometry.idleHoverBounds;
+}
+
+function openPanel(focusInput = false) {
+  if (!notchWindow || notchWindow.isDestroyed()) return;
+  const geometry = getGeometry();
+  expanded = true;
+  closing = false;
+  outsideSince = undefined;
+  focusRequested = focusInput;
+  notchWindow.setBounds(geometry.panelBounds);
+  notchWindow.setIgnoreMouseEvents(false);
+  notchWindow.showInactive();
+  notchWindow.setBounds(geometry.panelBounds);
+  sendRendererState('open', { focusInput });
+}
+
+function createTray() {
+  const iconPath = path.join(__dirname, '../../assets/igrissTemplate.png');
+  const retinaPath = path.join(__dirname, '../../assets/igriss2xTemplate.png');
+  const image = nativeImage.createFromPath(iconPath);
+  const retinaImage = nativeImage.createFromPath(retinaPath);
+  image.addRepresentation({ scaleFactor: 2, dataURL: retinaImage.toDataURL() });
+  image.setTemplateImage(true);
+  tray = new Tray(image);
+  tray.setToolTip('Igriss');
+  trayMenu = Menu.buildFromTemplate([
+    { label: 'Open Igriss', click: () => openPanel(true) },
+    { type: 'separator' },
+    { label: 'Quit Igriss', click: () => app.quit() }
+  ]);
+  tray.on('click', () => openPanel(true));
+  tray.on('right-click', () => tray?.popUpContextMenu(trayMenu));
 }
 
 function pollHover() {
@@ -82,21 +128,16 @@ function pollHover() {
   if (insideZone) {
     outsideSince = undefined;
     if (!expanded) {
-      expanded = true;
-      closing = false;
-      notchWindow.setBounds(geometry.panelBounds);
-      notchWindow.setIgnoreMouseEvents(false);
-      notchWindow.showInactive();
-      notchWindow.setBounds(geometry.panelBounds);
-      sendRendererState('open');
+      openPanel(false);
     } else if (closing) {
       closing = false;
-      sendRendererState('open');
+      sendRendererState('open', { focusInput: false });
     }
     return;
   }
 
   if (!expanded || closing) return;
+  if (focusRequested) return;
   if (outsideSince === undefined) outsideSince = Date.now();
 
   if (Date.now() - outsideSince >= COLLAPSE_DELAY_MS) {
@@ -114,12 +155,13 @@ function handleCollapseComplete(event) {
   if (isPointInBounds(cursor, getHoverBounds(geometry, true))) {
     closing = false;
     outsideSince = undefined;
-    sendRendererState('open');
+    sendRendererState('open', { focusInput: false });
     return;
   }
 
   expanded = false;
   closing = false;
+  focusRequested = false;
   notchWindow.setBounds(geometry.notchBounds);
   notchWindow.setFocusable(false);
   notchWindow.setIgnoreMouseEvents(true, { forward: true });
@@ -134,6 +176,7 @@ function handleInputFocus(event) {
 function handleInputBlur(event) {
   if (!notchWindow || event.sender !== notchWindow.webContents) return;
   notchWindow.setFocusable(false);
+  focusRequested = false;
 }
 
 function createWindow() {
@@ -197,10 +240,18 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  createTray();
   if (process.platform === 'darwin') app.dock.hide();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
+});
+
+app.on('before-quit', () => {
+  if (hoverPoll) clearInterval(hoverPoll);
+  hoverPoll = undefined;
+  tray?.destroy();
+  tray = undefined;
 });
 
 app.on('window-all-closed', () => {

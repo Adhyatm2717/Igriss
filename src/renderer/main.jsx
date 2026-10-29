@@ -11,7 +11,7 @@ const centerZoneWidth = Number(query.get('centerZoneWidth')) || 220;
 const expandDuration = Number(query.get('expandDuration')) || 250;
 const collapseDuration = Number(query.get('collapseDuration')) || 200;
 const contentFadeDuration = Number(query.get('contentFadeDuration')) || 100;
-const notchShape = query.get('notchShape') || '';
+const notchShape = query.get('idleShape') || query.get('notchShape') || '';
 const panelShape = query.get('panelShape') || '';
 
 function tokenizePath(path) {
@@ -35,6 +35,8 @@ function interpolatePath(progress) {
 
 function App() {
   const pathRef = React.useRef(null);
+  const inputRef = React.useRef(null);
+  const focusAfterOpenRef = React.useRef(false);
   const progressRef = React.useRef(0);
   const frameRef = React.useRef(null);
   const closeTimerRef = React.useRef(null);
@@ -82,7 +84,8 @@ function App() {
       frameRef.current = requestAnimationFrame(tick);
     }
 
-    const stopOpen = notchApi.onOpen(() => {
+    const stopOpen = notchApi.onOpen((options = {}) => {
+      focusAfterOpenRef.current = options.focusInput === true;
       closePendingRef.current = false;
       if (closeTimerRef.current !== null) {
         clearTimeout(closeTimerRef.current);
@@ -92,7 +95,12 @@ function App() {
       const alreadyExpanded = progressRef.current === 1;
       if (alreadyExpanded) setContentVisible(true);
       animateTo(1, expandDuration, (time) => 1 - (1 - time) ** 2, () => {
-        if (!closePendingRef.current) setContentVisible(true);
+        if (closePendingRef.current) return;
+        setContentVisible(true);
+        if (focusAfterOpenRef.current) {
+          focusAfterOpenRef.current = false;
+          inputRef.current?.focus();
+        }
       });
     });
 
@@ -151,6 +159,7 @@ function App() {
 
         <form className="composer" onSubmit={(event) => event.preventDefault()}>
           <input
+            ref={inputRef}
             type="text"
             aria-label="Ask Igriss"
             placeholder="Ask Igriss…"

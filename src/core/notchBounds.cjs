@@ -1,4 +1,7 @@
 const NOTCH_WIDTH = 185;
+const NO_NOTCH_TAB_WIDTH = 64;
+const NO_NOTCH_TAB_HEIGHT = 10;
+const NO_NOTCH_TAB_RADIUS = 5;
 const NOTCH_HEIGHT = 32;
 const NOTCH_BOTTOM_RADIUS = 9;
 const NOTCH_TOP_FLARE = 5.5;
@@ -23,6 +26,30 @@ function getNotchBounds(displayBounds) {
     y: displayBounds.y,
     width: NOTCH_WINDOW_WIDTH,
     height: NOTCH_HEIGHT
+  };
+}
+
+function getNoNotchBounds(displayBounds) {
+  return {
+    x: displayBounds.x + (displayBounds.width - PANEL_WINDOW_WIDTH) / 2,
+    y: displayBounds.y,
+    width: PANEL_WINDOW_WIDTH,
+    height: NO_NOTCH_TAB_HEIGHT
+  };
+}
+
+function isNotchedDisplay(display) {
+  return display.internal === true && display.bounds.width / display.bounds.height < 1.58;
+}
+
+function getIdleHoverBounds(displayBounds, hasNotch) {
+  const width = hasNotch ? NOTCH_WINDOW_WIDTH : NO_NOTCH_TAB_WIDTH;
+  const height = hasNotch ? NOTCH_HEIGHT : NO_NOTCH_TAB_HEIGHT;
+  return {
+    x: displayBounds.x + (displayBounds.width - width) / 2,
+    y: displayBounds.y,
+    width,
+    height
   };
 }
 
@@ -55,28 +82,29 @@ function isPointInBounds(point, bounds) {
   );
 }
 
-function getShapePath(baseWidth, height, bottomRadius) {
+function getShapePath(baseWidth, height, bottomRadius, topFlare = NOTCH_TOP_FLARE) {
   const viewWidth = PANEL_WINDOW_WIDTH;
   const left = (viewWidth - baseWidth) / 2;
   const right = left + baseWidth;
-  const outerLeft = left - NOTCH_TOP_FLARE;
-  const outerRight = right + NOTCH_TOP_FLARE;
+  const outerLeft = left - topFlare;
+  const outerRight = right + topFlare;
   const bottom = height - bottomRadius;
 
   return [
     `M ${outerLeft} 0`,
     `H ${outerRight}`,
-    `C ${outerRight} 0 ${right} 0 ${right} ${NOTCH_TOP_FLARE}`,
+    `C ${outerRight} 0 ${right} 0 ${right} ${topFlare}`,
     `V ${bottom}`,
     `Q ${right} ${height} ${right - bottomRadius} ${height}`,
     `H ${left + bottomRadius}`,
     `Q ${left} ${height} ${left} ${bottom}`,
-    `V ${NOTCH_TOP_FLARE}`,
+    `V ${topFlare}`,
     `C ${left} 0 ${outerLeft} 0 ${outerLeft} 0`,
     'Z'
   ].join(' ');
 }
 
+const NO_NOTCH_TAB_SHAPE_PATH = getShapePath(NO_NOTCH_TAB_WIDTH, NO_NOTCH_TAB_HEIGHT, NO_NOTCH_TAB_RADIUS, 0);
 const NOTCH_SHAPE_PATH = getShapePath(NOTCH_WIDTH, NOTCH_HEIGHT, NOTCH_BOTTOM_RADIUS);
 const PANEL_SHAPE_PATH = getShapePath(PANEL_WIDTH, PANEL_HEIGHT, PANEL_BOTTOM_RADIUS);
 
@@ -92,6 +120,10 @@ module.exports = {
   NOTCH_TOP_FLARE,
   NOTCH_WIDTH,
   NOTCH_WINDOW_WIDTH,
+  NO_NOTCH_TAB_HEIGHT,
+  NO_NOTCH_TAB_RADIUS,
+  NO_NOTCH_TAB_SHAPE_PATH,
+  NO_NOTCH_TAB_WIDTH,
   PANEL_BOTTOM_RADIUS,
   PANEL_HEIGHT,
   PANEL_HOVER_MARGIN,
@@ -101,8 +133,11 @@ module.exports = {
   TOP_ROW_CENTER_CLEARANCE,
   TOP_ROW_CENTER_WIDTH,
   getHoverZone,
+  getIdleHoverBounds,
   getNotchBounds,
+  getNoNotchBounds,
   getPanelBounds,
   getShapePath,
+  isNotchedDisplay,
   isPointInBounds
 };
