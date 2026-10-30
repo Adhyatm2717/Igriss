@@ -58,6 +58,9 @@ function resolveAllowedPath(input, options = {}) {
 
   const lexicalRoots = allowedRoots.filter((root) => isWithin(candidate, root));
   if (lexicalRoots.length === 0) throw new Error('Path is outside the allowed roots');
+  if (lexicalRoots.some((root) => candidate === root)) {
+    throw new Error('A protected root cannot be used as a file path');
+  }
 
   const existing = findExistingAncestor(candidate);
   const realAncestor = fs.realpathSync(existing.existing);
@@ -75,6 +78,9 @@ function resolveAllowedPath(input, options = {}) {
 
   if (!realRoots.some((root) => isWithin(realCandidate, root))) {
     throw new Error('Path resolves outside the allowed roots');
+  }
+  if (realRoots.some((root) => realCandidate === root)) {
+    throw new Error('A protected root cannot be used as a file path');
   }
 
   let realIgrissHome;

@@ -9,6 +9,7 @@ const { move } = require('./move.cjs');
 const { rename } = require('./rename.cjs');
 const { createFolder } = require('./createFolder.cjs');
 const { writeFile } = require('./writeFile.cjs');
+const { deletePath, restore } = require('./delete.cjs');
 
 let sandbox;
 let allowedRoot;
@@ -24,7 +25,7 @@ beforeEach(() => {
   options = {
     allowedRoots: [allowedRoot],
     igrissHome: path.join(sandbox, '.igriss'),
-    idFactory: () => 'test-uuid'
+    idFactory: () => '00000000-0000-4000-8000-000000000001'
   };
 });
 
@@ -53,6 +54,7 @@ describe('move', () => {
     fs.writeFileSync(source, 'safe');
     expect(() => move(source, path.join(outsideRoot, 'target.txt'), options)).toThrow(/outside the allowed roots/);
     expect(() => move(`${allowedRoot}/../outside/target.txt`, source, options)).toThrow(/traversal/);
+    expect(() => move(allowedRoot, path.join(allowedRoot, 'moved-root'), options)).toThrow(/protected root/);
   });
 
   it('rejects a symlink that escapes an allowed root', () => {
@@ -114,6 +116,9 @@ describe('createFolder', () => {
       inverse: { tool: 'delete', args: { path: folderPath } }
     });
     expect(fs.statSync(folderPath).isDirectory()).toBe(true);
+    const deleted = deletePath(operation.inverse.args.path, options);
+    restore(deleted.inverse.args.from, deleted.inverse.args.to, options);
+    expect(fs.statSync(folderPath).isDirectory()).toBe(true);
   });
 
   it('refuses to replace an existing file or folder', () => {
@@ -138,6 +143,9 @@ describe('writeFile', () => {
       inverse: { tool: 'delete', args: { path: filePath } }
     });
     expect(fs.readFileSync(filePath, 'utf8')).toBe('hello');
+    const deleted = deletePath(operation.inverse.args.path, options);
+    restore(deleted.inverse.args.from, deleted.inverse.args.to, options);
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('hello');
   });
 
   it('refuses to replace existing files and folders', () => {
@@ -149,5 +157,63 @@ describe('writeFile', () => {
     expect(() => writeFile(existingFile, 'replace', options)).toThrow(/already exists/);
     expect(() => writeFile(existingFolder, 'replace', options)).toThrow(/already exists/);
     expect(fs.readFileSync(existingFile, 'utf8')).toBe('keep');
+  });
+});
+
+describe('delete and restore', () => {
+  it('moves a file into a unique trash folder and restores it with its original path', () => {
+    const filePath = path.join(allowedRoot, 'remove-me.txt');
+    fs.writeFileSync(filePath, 'keep me');
+
+    const operation = deletePath(filePath, options);
+
+    expect(operation.result).toEqual({
+      path: filePath,
+      originalPath: filePath,
+      trashPath: path.join(options.igrissHome, 'temp', '00000000-0000-4000-8000-000000000001', 'remove-me.txt')
+    });
+    expect(fs.existsSync(filePath)).toBe(false);
+    expect(fs.readFileSync(operation.result.trashPath, 'utf8')).toBe('keep me');
+    expect(operation.inverse).toEqual({
+      tool: 'restore',
+      args: { from: operation.result.trashPath, to: filePath }
+    });
+
+    restore(operation.inverse.args.from, operation.inverse.args.to, options);
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('keep me');
+  });
+
+  it('trashes and restores a folder with its contents intact', () => {
+    const folderPath = path.join(allowedRoot, 'folder-to-delete');
+    fs.mkdirSync(folderPath);
+    fs.writeFileSync(path.join(folderPath, 'inside.txt'), 'inside');
+
+    const operation = deletePath(folderPath, options);
+    expect(fs.existsSync(folderPath)).toBe(false);
+    expect(fs.readFileSync(path.join(operation.result.trashPath, 'inside.txt'), 'utf8')).toBe('inside');
+
+    restore(operation.inverse.args.from, operation.inverse.args.to, options);
+    expect(fs.readFileSync(path.join(folderPath, 'inside.txt'), 'utf8')).toBe('inside');
+  });
+
+  it('fails to restore if the original path has become occupied', () => {
+    const filePath = path.join(allowedRoot, 'occupied.txt');
+    fs.writeFileSync(filePath, 'original');
+    const operation = deletePath(filePath, options);
+    fs.writeFileSync(filePath, 'new file');
+
+    expect(() => restore(operation.result.trashPath, filePath, options)).toThrow(/already exists/);
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('new file');
+    expect(fs.readFileSync(operation.result.trashPath, 'utf8')).toBe('original');
+  });
+
+  it('rejects deleting outside the allowed roots and paths inside ~/.igriss', () => {
+    const outsideFile = path.join(outsideRoot, 'outside.txt');
+    fs.writeFileSync(outsideFile, 'safe');
+    expect(() => deletePath(outsideFile, options)).toThrow(/outside the allowed roots/);
+
+    fs.mkdirSync(options.igrissHome);
+    const igrissOptions = { ...options, allowedRoots: [options.igrissHome] };
+    expect(() => deletePath(path.join(options.igrissHome, 'private.txt'), igrissOptions)).toThrow(/inside ~\/\.igriss/);
   });
 });
