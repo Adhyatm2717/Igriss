@@ -10,6 +10,7 @@ const { rename } = require('./rename.cjs');
 const { createFolder } = require('./createFolder.cjs');
 const { writeFile } = require('./writeFile.cjs');
 const { deletePath, restore } = require('./delete.cjs');
+const toolApi = require('./index.cjs');
 
 let sandbox;
 let allowedRoot;
@@ -31,6 +32,18 @@ beforeEach(() => {
 
 afterEach(() => {
   fs.rmSync(sandbox, { recursive: true, force: true });
+});
+
+describe('tool exports', () => {
+  it('exposes the plan tools and internal restore and purge functions', () => {
+    expect(typeof toolApi.move).toBe('function');
+    expect(typeof toolApi.rename).toBe('function');
+    expect(typeof toolApi.createFolder).toBe('function');
+    expect(typeof toolApi.writeFile).toBe('function');
+    expect(typeof toolApi.delete).toBe('function');
+    expect(typeof toolApi.restore).toBe('function');
+    expect(typeof toolApi.purge).toBe('function');
+  });
 });
 
 describe('move', () => {

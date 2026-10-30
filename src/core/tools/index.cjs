@@ -1,6 +1,7 @@
 const { createFolder } = require('./createFolder.cjs');
 const { deletePath, restore } = require('./delete.cjs');
 const { move } = require('./move.cjs');
+const { purge } = require('./purge.cjs');
 const { rename } = require('./rename.cjs');
 const { writeFile } = require('./writeFile.cjs');
 
@@ -9,6 +10,7 @@ module.exports = {
   delete: deletePath,
   deletePath,
   move,
+  purge,
   rename,
   restore,
   writeFile
