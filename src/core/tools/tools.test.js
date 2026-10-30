@@ -8,6 +8,7 @@ const path = require('node:path');
 const { move } = require('./move.cjs');
 const { rename } = require('./rename.cjs');
 const { createFolder } = require('./createFolder.cjs');
+const { writeFile } = require('./writeFile.cjs');
 
 let sandbox;
 let allowedRoot;
@@ -123,6 +124,30 @@ describe('createFolder', () => {
 
     expect(() => createFolder(existingFile, options)).toThrow(/already exists/);
     expect(() => createFolder(existingFolder, options)).toThrow(/already exists/);
+    expect(fs.readFileSync(existingFile, 'utf8')).toBe('keep');
+  });
+});
+
+describe('writeFile', () => {
+  it('writes a file and returns a delete inverse', () => {
+    const filePath = path.join(allowedRoot, 'created.txt');
+    const operation = writeFile(filePath, 'hello', options);
+
+    expect(operation).toEqual({
+      result: { path: filePath, bytesWritten: 5 },
+      inverse: { tool: 'delete', args: { path: filePath } }
+    });
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('hello');
+  });
+
+  it('refuses to replace existing files and folders', () => {
+    const existingFile = path.join(allowedRoot, 'existing.txt');
+    const existingFolder = path.join(allowedRoot, 'existing-folder');
+    fs.writeFileSync(existingFile, 'keep');
+    fs.mkdirSync(existingFolder);
+
+    expect(() => writeFile(existingFile, 'replace', options)).toThrow(/already exists/);
+    expect(() => writeFile(existingFolder, 'replace', options)).toThrow(/already exists/);
     expect(fs.readFileSync(existingFile, 'utf8')).toBe('keep');
   });
 });
