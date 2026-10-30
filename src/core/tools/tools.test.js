@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { move } = require('./move.cjs');
+const { rename } = require('./rename.cjs');
 
 let sandbox;
 let allowedRoot;
@@ -68,5 +69,35 @@ describe('move', () => {
     expect(() => move(source, destination, options)).toThrow(/already exists/);
     expect(fs.readFileSync(source, 'utf8')).toBe('source');
     expect(fs.readFileSync(destination, 'utf8')).toBe('destination');
+  });
+});
+
+describe('rename', () => {
+  it('renames a file and returns an inverse rename operation', () => {
+    const from = path.join(allowedRoot, 'before.txt');
+    const to = path.join(allowedRoot, 'after.txt');
+    fs.writeFileSync(from, 'hello');
+
+    const operation = rename(from, to, options);
+
+    expect(operation.result).toEqual({ from, to });
+    expect(operation.inverse).toEqual({ tool: 'rename', args: { from: to, to: from } });
+    rename(operation.inverse.args.from, operation.inverse.args.to, options);
+    expect(fs.readFileSync(from, 'utf8')).toBe('hello');
+    expect(fs.existsSync(to)).toBe(false);
+  });
+
+  it('refuses an existing destination and moving across directories', () => {
+    const from = path.join(allowedRoot, 'before.txt');
+    const to = path.join(allowedRoot, 'after.txt');
+    const otherDirectory = path.join(allowedRoot, 'nested');
+    fs.mkdirSync(otherDirectory);
+    fs.writeFileSync(from, 'source');
+    fs.writeFileSync(to, 'destination');
+
+    expect(() => rename(from, to, options)).toThrow(/already exists/);
+    expect(() => rename(from, path.join(otherDirectory, 'moved.txt'), options)).toThrow(/same directory/);
+    expect(fs.readFileSync(from, 'utf8')).toBe('source');
+    expect(fs.readFileSync(to, 'utf8')).toBe('destination');
   });
 });
