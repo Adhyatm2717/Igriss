@@ -1,5 +1,8 @@
 const fs = require('node:fs');
+const path = require('node:path');
 const { assertNotExists, resolveAllowedPath } = require('./pathGuard.cjs');
+const { deletePath } = require('./delete.cjs');
+const { purge } = require('./purge.cjs');
 
 function writeFile(filePath, content, options = {}) {
   const target = resolveAllowedPath(filePath, options);
@@ -14,8 +17,19 @@ function writeFile(filePath, content, options = {}) {
 
   return {
     result: { path: target, bytesWritten },
-    inverse: { tool: 'delete', args: { path: target } }
+    inverse: { tool: 'undoWriteFile', args: { path: target, content } }
   };
 }
 
-module.exports = { writeFile };
+function undoWriteFile(filePath, content, options = {}) {
+  const removed = deletePath(filePath, options);
+  const transactionDirectory = path.dirname(removed.result.trashPath);
+  purge(removed.result.trashPath, options);
+  purge(transactionDirectory, options);
+  return {
+    result: { path: removed.result.originalPath },
+    inverse: { tool: 'writeFile', args: { path: removed.result.originalPath, content } }
+  };
+}
+
+module.exports = { undoWriteFile, writeFile };
