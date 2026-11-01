@@ -70,6 +70,7 @@ function runInverse(inverse) {
     case 'createFolder': return tools.createFolder(args.path, options);
     case 'removeEmptyFolder': return tools.removeEmptyFolder(args.path, options);
     case 'writeFile': return tools.writeFile(args.path, args.content, options);
+    case 'undoWriteFile': return tools.undoWriteFile(args.path, args.content, options);
     case 'delete': return tools.delete(args.path, options);
     case 'restore': return tools.restore(args.from, args.to, options);
     default: throw new Error(`Unexpected inverse tool: ${inverse.tool}`);
@@ -384,7 +385,7 @@ describe('special filenames and failures', () => {
       const deleted = tools.delete(file, options);
       tools.restore(deleted.inverse.args.from, deleted.inverse.args.to, options);
       expect(fs.readFileSync(file, 'utf8')).toBe(name);
-      expect(created.inverse.tool).toBe('delete');
+      expect(created.inverse.tool).toBe('undoWriteFile');
     }
   });
 
