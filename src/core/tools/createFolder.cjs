@@ -8,7 +8,7 @@ function createFolder(folderPath, options = {}) {
 
   return {
     result: { path: target },
-    inverse: { tool: 'delete', args: { path: target } }
+    inverse: { tool: 'removeEmptyFolder', args: { path: target } }
   };
 }
 

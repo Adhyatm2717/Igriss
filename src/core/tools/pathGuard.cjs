@@ -14,6 +14,9 @@ function requireAbsolutePath(input) {
   if (input.split(/[\\/]+/).includes('..')) {
     throw new Error('Path traversal is not allowed');
   }
+  if (['*', '?', '[', ']', '{', '}'].some((character) => input.includes(character))) {
+    throw new Error('Glob patterns are not allowed; provide a concrete path');
+  }
   return path.resolve(input);
 }
 
@@ -101,7 +104,7 @@ function resolveAllowedPath(input, options = {}) {
     if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
   }
 
-  return candidate;
+  return realCandidate;
 }
 
 function assertNotExists(target) {
@@ -116,9 +119,15 @@ function assertNotExists(target) {
 
 function getTrashRoot(options = {}) {
   const { igrissHome } = getConfiguredPaths(options);
-  const trashRoot = path.resolve(options.trashRoot || path.join(igrissHome, 'temp'));
-  if (trashRoot !== path.join(igrissHome, 'temp')) {
+  const requestedTrashRoot = path.resolve(options.trashRoot || path.join(igrissHome, 'temp'));
+  if (requestedTrashRoot !== path.join(igrissHome, 'temp')) {
     throw new Error('Trash root must be ~/.igriss/temp');
+  }
+  let trashRoot = requestedTrashRoot;
+  try {
+    trashRoot = fs.realpathSync(requestedTrashRoot);
+  } catch (error) {
+    if (error.code !== 'ENOENT' && error.code !== 'ENOTDIR') throw error;
   }
   return { igrissHome, trashRoot };
 }
@@ -136,7 +145,7 @@ function ensureTrashRoot(options = {}) {
   const realHome = fs.realpathSync(igrissHome);
   const realTrash = fs.realpathSync(trashRoot);
   if (!isWithin(realTrash, realHome)) throw new Error('Trash root resolves outside ~/.igriss');
-  return { igrissHome, trashRoot, realTrash };
+  return { igrissHome, trashRoot: realTrash, realTrash };
 }
 
 function resolveTrashPath(input, options = {}) {
@@ -158,7 +167,7 @@ function resolveTrashPath(input, options = {}) {
   if (!isWithin(realCandidate, fs.realpathSync(igrissHome))) {
     throw new Error('Path resolves outside ~/.igriss');
   }
-  return candidate;
+  return realCandidate;
 }
 
 module.exports = {

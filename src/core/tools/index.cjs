@@ -3,6 +3,7 @@ const { deletePath, restore } = require('./delete.cjs');
 const { move } = require('./move.cjs');
 const { purge } = require('./purge.cjs');
 const { rename } = require('./rename.cjs');
+const { removeEmptyFolder } = require('./removeEmptyFolder.cjs');
 const { writeFile } = require('./writeFile.cjs');
 
 module.exports = {
@@ -12,6 +13,7 @@ module.exports = {
   move,
   purge,
   rename,
+  removeEmptyFolder,
   restore,
   writeFile
 };

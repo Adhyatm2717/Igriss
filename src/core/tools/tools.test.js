@@ -10,23 +10,27 @@ const { rename } = require('./rename.cjs');
 const { createFolder } = require('./createFolder.cjs');
 const { writeFile } = require('./writeFile.cjs');
 const { deletePath, restore } = require('./delete.cjs');
+const { removeEmptyFolder } = require('./removeEmptyFolder.cjs');
 const toolApi = require('./index.cjs');
 
 let sandbox;
 let allowedRoot;
 let outsideRoot;
 let options;
+let trashId;
 
 beforeEach(() => {
-  sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'igriss-file-tools-'));
+  sandbox = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'igriss-file-tools-')));
   allowedRoot = path.join(sandbox, 'allowed');
   outsideRoot = path.join(sandbox, 'outside');
+  trashId = 0;
   fs.mkdirSync(allowedRoot);
   fs.mkdirSync(outsideRoot);
   options = {
+    homeDir: sandbox,
     allowedRoots: [allowedRoot],
     igrissHome: path.join(sandbox, '.igriss'),
-    idFactory: () => '00000000-0000-4000-8000-000000000001'
+    idFactory: () => `00000000-0000-4000-8000-${String(++trashId).padStart(12, '0')}`
   };
 });
 
@@ -43,6 +47,7 @@ describe('tool exports', () => {
     expect(typeof toolApi.delete).toBe('function');
     expect(typeof toolApi.restore).toBe('function');
     expect(typeof toolApi.purge).toBe('function');
+    expect(typeof toolApi.removeEmptyFolder).toBe('function');
   });
 });
 
@@ -67,6 +72,7 @@ describe('move', () => {
     fs.writeFileSync(source, 'safe');
     expect(() => move(source, path.join(outsideRoot, 'target.txt'), options)).toThrow(/outside the allowed roots/);
     expect(() => move(`${allowedRoot}/../outside/target.txt`, source, options)).toThrow(/traversal/);
+    expect(() => move(path.join(allowedRoot, '*.txt'), source, options)).toThrow(/Glob patterns/);
     expect(() => move(allowedRoot, path.join(allowedRoot, 'moved-root'), options)).toThrow(/protected root/);
   });
 
@@ -75,6 +81,23 @@ describe('move', () => {
     fs.symlinkSync(outsideRoot, escape, 'dir');
     expect(() => move(path.join(escape, 'file.txt'), path.join(allowedRoot, 'target.txt'), options))
       .toThrow(/resolves outside/);
+  });
+
+  it('returns canonical absolute paths when a safe in-root symlink is used', () => {
+    const realDirectory = path.join(allowedRoot, 'real');
+    const aliasDirectory = path.join(allowedRoot, 'alias');
+    fs.mkdirSync(realDirectory);
+    fs.symlinkSync(realDirectory, aliasDirectory, 'dir');
+    const source = path.join(realDirectory, 'source.txt');
+    const aliasSource = path.join(aliasDirectory, 'source.txt');
+    const destination = path.join(realDirectory, 'destination.txt');
+    fs.writeFileSync(source, 'canonical');
+
+    const operation = move(aliasSource, destination, options);
+
+    expect(operation.result.from).toBe(source);
+    expect(operation.result.to).toBe(destination);
+    expect(operation.inverse.args).toEqual({ from: destination, to: source });
   });
 
   it('refuses to overwrite an existing destination', () => {
@@ -120,14 +143,17 @@ describe('rename', () => {
 });
 
 describe('createFolder', () => {
-  it('creates a folder and returns a delete inverse', () => {
+  it('creates a folder and returns a removeEmptyFolder inverse', () => {
     const folderPath = path.join(allowedRoot, 'new-folder');
     const operation = createFolder(folderPath, options);
 
     expect(operation).toEqual({
       result: { path: folderPath },
-      inverse: { tool: 'delete', args: { path: folderPath } }
+      inverse: { tool: 'removeEmptyFolder', args: { path: folderPath } }
     });
+    expect(fs.statSync(folderPath).isDirectory()).toBe(true);
+    const removed = removeEmptyFolder(operation.inverse.args.path, options);
+    restore(removed.inverse.args.from, removed.inverse.args.to, options);
     expect(fs.statSync(folderPath).isDirectory()).toBe(true);
     const deleted = deletePath(operation.inverse.args.path, options);
     restore(deleted.inverse.args.from, deleted.inverse.args.to, options);
@@ -143,6 +169,33 @@ describe('createFolder', () => {
     expect(() => createFolder(existingFile, options)).toThrow(/already exists/);
     expect(() => createFolder(existingFolder, options)).toThrow(/already exists/);
     expect(fs.readFileSync(existingFile, 'utf8')).toBe('keep');
+  });
+});
+
+describe('removeEmptyFolder', () => {
+  it('moves an empty folder into temp and returns an inverse that restores it', () => {
+    const folderPath = path.join(allowedRoot, 'empty');
+    fs.mkdirSync(folderPath);
+
+    const operation = removeEmptyFolder(folderPath, options);
+
+    expect(operation.result.originalPath).toBe(folderPath);
+    expect(operation.inverse).toEqual({
+      tool: 'restore',
+      args: { from: operation.result.trashPath, to: folderPath }
+    });
+    expect(fs.existsSync(folderPath)).toBe(false);
+    restore(operation.inverse.args.from, operation.inverse.args.to, options);
+    expect(fs.statSync(folderPath).isDirectory()).toBe(true);
+  });
+
+  it('refuses a non-empty folder without changing its files', () => {
+    const folderPath = path.join(allowedRoot, 'not-empty');
+    fs.mkdirSync(folderPath);
+    fs.writeFileSync(path.join(folderPath, 'keep.txt'), 'keep');
+
+    expect(() => removeEmptyFolder(folderPath, options)).toThrow(/not empty/);
+    expect(fs.readFileSync(path.join(folderPath, 'keep.txt'), 'utf8')).toBe('keep');
   });
 });
 
