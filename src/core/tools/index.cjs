@@ -4,6 +4,7 @@ const { move } = require('./move.cjs');
 const { purge } = require('./purge.cjs');
 const { rename } = require('./rename.cjs');
 const { removeEmptyFolder } = require('./removeEmptyFolder.cjs');
+const { renderStep } = require('./renderStep.cjs');
 const { writeFile } = require('./writeFile.cjs');
 
 module.exports = {
@@ -14,6 +15,7 @@ module.exports = {
   purge,
   rename,
   removeEmptyFolder,
+  renderStep,
   restore,
   writeFile
 };

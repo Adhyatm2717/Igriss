@@ -48,6 +48,7 @@ describe('tool exports', () => {
     expect(typeof toolApi.restore).toBe('function');
     expect(typeof toolApi.purge).toBe('function');
     expect(typeof toolApi.removeEmptyFolder).toBe('function');
+    expect(typeof toolApi.renderStep).toBe('function');
   });
 });
 
