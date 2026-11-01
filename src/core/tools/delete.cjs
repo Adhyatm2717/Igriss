@@ -8,6 +8,7 @@ const {
   resolveAllowedPath,
   resolveTrashPath
 } = require('./pathGuard.cjs');
+const { purge } = require('./purge.cjs');
 
 function deletePath(filePath, options = {}) {
   const source = resolveAllowedPath(filePath, options);
@@ -39,6 +40,9 @@ function restore(from, to, options = {}) {
   const destination = resolveAllowedPath(to, options);
   assertNotExists(destination);
   fs.renameSync(source, destination);
+  // The transaction directory is now empty. Remove it through the sole
+  // permanent deletion entry point so undo restores the pre-delete tree.
+  purge(transactionDirectory, options);
 
   return {
     result: { from: source, to: destination },
