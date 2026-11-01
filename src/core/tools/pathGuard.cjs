@@ -11,7 +11,23 @@ function requireAbsolutePath(input) {
   if (typeof input !== 'string' || input.length === 0 || !path.isAbsolute(input)) {
     throw new Error('Path must be a non-empty absolute path');
   }
-  if (input.split(/[\\/]+/).includes('..')) {
+  if (input.includes('\\0')) throw new Error('Null bytes are not allowed in paths');
+  let checked = input;
+  // Decode repeatedly so double-encoded traversal is rejected too. The decoded
+  // value is for validation only; filesystem paths retain their literal names.
+  for (let pass = 0; pass < 4; pass += 1) {
+    if (checked.split(/[\\/]+/).includes('..')) {
+      throw new Error('Path traversal is not allowed');
+    }
+    try {
+      const decoded = decodeURIComponent(checked);
+      if (decoded === checked) break;
+      checked = decoded;
+    } catch {
+      break;
+    }
+  }
+  if (checked.split(/[\\/]+/).includes('..')) {
     throw new Error('Path traversal is not allowed');
   }
   if (['*', '?', '[', ']', '{', '}'].some((character) => input.includes(character))) {
