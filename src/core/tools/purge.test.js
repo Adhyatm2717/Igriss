@@ -11,7 +11,7 @@ let sandbox;
 let options;
 
 beforeEach(() => {
-  sandbox = fs.mkdtempSync(path.join(os.tmpdir(), 'igriss-purge-test-'));
+  sandbox = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'igriss-purge-test-')));
   const igrissHome = path.join(sandbox, '.igriss');
   options = {
     igrissHome,
