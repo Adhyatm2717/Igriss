@@ -41,8 +41,7 @@ function runInverse(inverse, options) {
     case 'createFolder': return tools.createFolder(args.path, options);
     case 'removeEmptyFolder': return tools.removeEmptyFolder(args.path, options);
     case 'writeFile': return tools.writeFile(args.path, args.content, options);
-    case 'undoWriteFile': return tools.undoWriteFile(args.path, args.content, options);
-    case 'delete': return tools.delete(args.path, options);
+    case 'delete': return tools.delete(args.path, { ...options, expectedSha256: args.expectedSha256 });
     case 'restore': return tools.restore(args.from, args.to, options);
     default: throw new Error(`Unexpected inverse tool: ${inverse.tool}`);
   }

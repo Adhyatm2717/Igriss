@@ -1,5 +1,5 @@
 import { createRequire } from 'node:module';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const require = createRequire(import.meta.url);
 const fs = require('node:fs');
@@ -70,8 +70,7 @@ function runInverse(inverse) {
     case 'createFolder': return tools.createFolder(args.path, options);
     case 'removeEmptyFolder': return tools.removeEmptyFolder(args.path, options);
     case 'writeFile': return tools.writeFile(args.path, args.content, options);
-    case 'undoWriteFile': return tools.undoWriteFile(args.path, args.content, options);
-    case 'delete': return tools.delete(args.path, options);
+    case 'delete': return tools.delete(args.path, { ...options, expectedSha256: args.expectedSha256 });
     case 'restore': return tools.restore(args.from, args.to, options);
     default: throw new Error(`Unexpected inverse tool: ${inverse.tool}`);
   }
@@ -222,6 +221,22 @@ describe('adversarial no-overwrite and folder behavior', () => {
     expect(() => tools.writeFile(file, 'replace', options)).toThrow(/already exists/);
     expect(snapshotTree()).toBe(before);
   });
+
+  it('uses exclusive creation if a destination appears after the preflight check', () => {
+    const file = path.join(desktop, 'raced.txt');
+    const originalWriteFileSync = fs.writeFileSync.bind(fs);
+    vi.spyOn(fs, 'writeFileSync').mockImplementation((target, content, writeOptions) => {
+      originalWriteFileSync(target, 'created concurrently', { flag: 'wx' });
+      return originalWriteFileSync(target, content, writeOptions);
+    });
+
+    try {
+      expect(() => tools.writeFile(file, 'must not replace', options)).toThrow();
+      expect(fs.readFileSync(file, 'utf8')).toBe('created concurrently');
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
 });
 
 describe('adversarial removeEmptyFolder', () => {
@@ -322,10 +337,6 @@ describe('inverse identity', () => {
       const before = snapshotTree();
       return { before, operation: tools.removeEmptyFolder(folder, options) };
     }],
-    ['writeFile', () => {
-      const before = snapshotTree();
-      return { before, operation: tools.writeFile(path.join(desktop, 'created.txt'), 'written', options) };
-    }],
     ['delete', () => {
       const file = path.join(desktop, 'deleted.txt');
       fs.writeFileSync(file, 'deleted');
@@ -335,13 +346,15 @@ describe('inverse identity', () => {
   ])('%s followed by its computed inverse restores the full sandbox snapshot', (_name, setupAndRun) => {
     const { before, operation } = setupAndRun();
 
-    runInverse(operation.inverse);
+    const undone = runInverse(operation.inverse);
+    if (operation.inverse.tool === 'delete' && undone?.inverse?.tool === 'restore') {
+      runInverse(undone.inverse);
+    }
 
     expect(snapshotTree()).toBe(before);
   });
 
-  it('undoes 20 mixed operations in reverse order and restores the original sandbox', () => {
-    const before = snapshotTree();
+  it('undoes 20 mixed operations in reverse order and keeps created files recoverable in temp', () => {
     const inverses = [];
     const folders = [];
     const looseFiles = [];
@@ -365,7 +378,12 @@ describe('inverse identity', () => {
     }
 
     for (const inverse of inverses.reverse()) runInverse(inverse);
-    expect(snapshotTree()).toBe(before);
+    expect(fs.readdirSync(desktop)).toEqual([]);
+    expect(fs.readdirSync(path.join(igrissHome, 'temp'))).toHaveLength(5);
+    for (let index = 0; index < 5; index += 1) {
+      const transaction = path.join(igrissHome, 'temp', `10000000-0000-4000-8000-${String(5 - index).padStart(12, '0')}`);
+      expect(fs.readFileSync(path.join(transaction, `shot-${index}.png`), 'utf8')).toBe(`shot-${index}`);
+    }
   });
 });
 
@@ -385,7 +403,7 @@ describe('special filenames and failures', () => {
       const deleted = tools.delete(file, options);
       tools.restore(deleted.inverse.args.from, deleted.inverse.args.to, options);
       expect(fs.readFileSync(file, 'utf8')).toBe(name);
-      expect(created.inverse.tool).toBe('undoWriteFile');
+      expect(created.inverse.tool).toBe('delete');
     }
   });
 

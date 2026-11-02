@@ -12,6 +12,7 @@ const { writeFile } = require('./writeFile.cjs');
 const { deletePath, restore } = require('./delete.cjs');
 const { removeEmptyFolder } = require('./removeEmptyFolder.cjs');
 const toolApi = require('./index.cjs');
+const { getConfiguredPaths } = require('./pathGuard.cjs');
 
 let sandbox;
 let allowedRoot;
@@ -39,6 +40,16 @@ afterEach(() => {
 });
 
 describe('tool exports', () => {
+  it('resolves default roots from the per-file HOME override', () => {
+    const configured = getConfiguredPaths();
+    expect(configured.allowedRoots).toEqual([
+      path.join(os.homedir(), 'Desktop'),
+      path.join(os.homedir(), 'Downloads'),
+      path.join(os.homedir(), 'Documents')
+    ]);
+    expect(configured.igrissHome).toBe(path.join(os.homedir(), '.igriss'));
+  });
+
   it('exposes the plan tools and internal restore and purge functions', () => {
     expect(typeof toolApi.move).toBe('function');
     expect(typeof toolApi.rename).toBe('function');
@@ -198,18 +209,48 @@ describe('removeEmptyFolder', () => {
 });
 
 describe('writeFile', () => {
-  it('writes a file and returns a guarded inverse that restores the original tree', () => {
+  it('writes a file with a checksum and returns a reversible delete inverse', () => {
     const filePath = path.join(allowedRoot, 'created.txt');
     const operation = writeFile(filePath, 'hello', options);
 
     expect(operation).toEqual({
-      result: { path: filePath, bytesWritten: 5 },
-      inverse: { tool: 'undoWriteFile', args: { path: filePath, content: 'hello' } }
+      result: { path: filePath, bytesWritten: 5, sha256: expect.any(String) },
+      inverse: { tool: 'delete', args: { path: filePath, expectedSha256: operation.result.sha256 } }
     });
     expect(fs.readFileSync(filePath, 'utf8')).toBe('hello');
-    const undone = toolApi.undoWriteFile(operation.inverse.args.path, operation.inverse.args.content, options);
+    const undone = toolApi.delete(operation.inverse.args.path, {
+      ...options,
+      expectedSha256: operation.inverse.args.expectedSha256
+    });
     expect(fs.existsSync(filePath)).toBe(false);
-    expect(undone.inverse).toEqual({ tool: 'writeFile', args: { path: filePath, content: 'hello' } });
+    expect(fs.readFileSync(undone.result.trashPath, 'utf8')).toBe('hello');
+    restore(undone.inverse.args.from, undone.inverse.args.to, options);
+    expect(fs.readFileSync(filePath, 'utf8')).toBe('hello');
+  });
+
+  it('refuses the inverse if the file changed after writing', () => {
+    const filePath = path.join(allowedRoot, 'created.txt');
+    const operation = writeFile(filePath, 'hello', options);
+    fs.writeFileSync(filePath, 'edited');
+    const before = fs.readFileSync(filePath);
+
+    expect(() => toolApi.delete(filePath, {
+      ...options,
+      expectedSha256: operation.result.sha256
+    })).toThrow(/checksum changed/);
+    expect(fs.readFileSync(filePath)).toEqual(before);
+  });
+
+  it('refuses the inverse if the file is missing', () => {
+    const filePath = path.join(allowedRoot, 'created.txt');
+    const operation = writeFile(filePath, 'hello', options);
+    fs.unlinkSync(filePath);
+
+    expect(() => toolApi.delete(filePath, {
+      ...options,
+      expectedSha256: operation.result.sha256
+    })).toThrow(/missing/);
+    expect(fs.existsSync(path.join(options.igrissHome, 'temp'))).toBe(false);
   });
 
   it('refuses to replace existing files and folders', () => {
