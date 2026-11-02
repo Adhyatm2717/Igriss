@@ -327,10 +327,6 @@ describe('inverse identity', () => {
       const before = snapshotTree();
       return { before, operation: tools.rename(from, path.join(desktop, 'after.txt'), options) };
     }],
-    ['createFolder', () => {
-      const before = snapshotTree();
-      return { before, operation: tools.createFolder(path.join(desktop, 'created'), options) };
-    }],
     ['removeEmptyFolder', () => {
       const folder = path.join(desktop, 'empty');
       fs.mkdirSync(folder);
@@ -347,14 +343,14 @@ describe('inverse identity', () => {
     const { before, operation } = setupAndRun();
 
     const undone = runInverse(operation.inverse);
-    if (operation.inverse.tool === 'delete' && undone?.inverse?.tool === 'restore') {
+    if (['delete', 'removeEmptyFolder'].includes(operation.inverse.tool) && undone?.inverse?.tool === 'restore') {
       runInverse(undone.inverse);
     }
 
     expect(snapshotTree()).toBe(before);
   });
 
-  it('undoes 20 mixed operations in reverse order and keeps created files recoverable in temp', () => {
+  it('undoes 20 mixed operations in reverse order and keeps removed items recoverable in temp', () => {
     const inverses = [];
     const folders = [];
     const looseFiles = [];
@@ -379,10 +375,14 @@ describe('inverse identity', () => {
 
     for (const inverse of inverses.reverse()) runInverse(inverse);
     expect(fs.readdirSync(desktop)).toEqual([]);
-    expect(fs.readdirSync(path.join(igrissHome, 'temp'))).toHaveLength(5);
+    expect(fs.readdirSync(path.join(igrissHome, 'temp'))).toHaveLength(10);
     for (let index = 0; index < 5; index += 1) {
       const transaction = path.join(igrissHome, 'temp', `10000000-0000-4000-8000-${String(5 - index).padStart(12, '0')}`);
       expect(fs.readFileSync(path.join(transaction, `shot-${index}.png`), 'utf8')).toBe(`shot-${index}`);
+    }
+    for (let index = 0; index < 5; index += 1) {
+      const transaction = path.join(igrissHome, 'temp', `10000000-0000-4000-8000-${String(10 - index).padStart(12, '0')}`);
+      expect(fs.statSync(path.join(transaction, `day-${index}`)).isDirectory()).toBe(true);
     }
   });
 });

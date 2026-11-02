@@ -166,10 +166,9 @@ describe('createFolder', () => {
     expect(fs.statSync(folderPath).isDirectory()).toBe(true);
     const removed = removeEmptyFolder(operation.inverse.args.path, options);
     expect(fs.existsSync(folderPath)).toBe(false);
-    expect(removed.inverse).toEqual({ tool: 'createFolder', args: { path: folderPath } });
-    const recreated = createFolder(removed.inverse.args.path, options);
-    expect(fs.statSync(recreated.result.path).isDirectory()).toBe(true);
-    removeEmptyFolder(recreated.inverse.args.path, options);
+    expect(removed.inverse).toEqual({ tool: 'restore', args: { from: removed.result.trashPath, to: folderPath } });
+    restore(removed.inverse.args.from, removed.inverse.args.to, options);
+    expect(fs.statSync(folderPath).isDirectory()).toBe(true);
   });
 
   it('refuses to replace an existing file or folder', () => {
@@ -185,16 +184,19 @@ describe('createFolder', () => {
 });
 
 describe('removeEmptyFolder', () => {
-  it('removes an empty folder with rmdir and returns a createFolder inverse', () => {
+  it('moves an empty folder into temp and returns a restore inverse', () => {
     const folderPath = path.join(allowedRoot, 'empty');
     fs.mkdirSync(folderPath);
 
     const operation = removeEmptyFolder(folderPath, options);
 
-    expect(operation.result.path).toBe(folderPath);
-    expect(operation.inverse).toEqual({ tool: 'createFolder', args: { path: folderPath } });
+    expect(operation.result.originalPath).toBe(folderPath);
+    expect(operation.inverse).toEqual({
+      tool: 'restore',
+      args: { from: operation.result.trashPath, to: folderPath }
+    });
     expect(fs.existsSync(folderPath)).toBe(false);
-    createFolder(operation.inverse.args.path, options);
+    restore(operation.inverse.args.from, operation.inverse.args.to, options);
     expect(fs.statSync(folderPath).isDirectory()).toBe(true);
   });
 

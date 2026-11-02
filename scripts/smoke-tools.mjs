@@ -67,7 +67,7 @@ try {
     const name = `Screenshot ${String(index).padStart(2, '0')}.png`;
     fs.writeFileSync(path.join(desktop, name), Buffer.from(`fake screenshot ${index}\n`));
   }
-  const original = snapshotTree(sandbox);
+  const originalDesktop = snapshotTree(desktop);
   const inverses = [];
   const dates = ['2026-10-30', '2026-10-31', '2026-11-01'];
 
@@ -93,8 +93,15 @@ try {
   execute({ tool: 'delete', args: { path: path.join(desktop, dates[2], 'Screenshot 12.png') } });
 
   for (const inverse of inverses.reverse()) runInverse(inverse, options);
-  assert.equal(snapshotTree(sandbox), original, 'sandbox checksums/listing differ after undo');
-  process.stdout.write('Smoke passed: original sandbox listing and checksums restored.\n');
+  assert.equal(snapshotTree(desktop), originalDesktop, 'Desktop listing/checksums differ after undo');
+  assert.equal(fs.readdirSync(trashRoot).length, dates.length, 'removed date folders were not retained in temp');
+  for (const date of dates) {
+    const transaction = fs.readdirSync(trashRoot)
+      .map((id) => path.join(trashRoot, id, date))
+      .find((candidate) => fs.existsSync(candidate));
+    assert.ok(transaction && fs.readdirSync(transaction).length === 0, `missing recoverable empty folder: ${date}`);
+  }
+  process.stdout.write('Smoke passed: Desktop checksums restored; removed empty folders remain recoverable in temp.\n');
 } finally {
   fs.rmSync(sandbox, { recursive: true, force: true });
 }
