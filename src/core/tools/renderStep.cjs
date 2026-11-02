@@ -2,19 +2,19 @@ const os = require('node:os');
 const path = require('node:path');
 const { getTrashRoot, resolveAllowedPath } = require('./pathGuard.cjs');
 
-function shellQuote(value) {
-  if (/^[A-Za-z0-9_./~:-]+$/.test(value)) return value;
+function shellQuoteComponent(value) {
+  if (/^[A-Za-z0-9_.:-]+$/.test(value)) return value;
   return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function formatAbsolutePath(absolutePath, homeDir) {
   const relative = path.relative(homeDir, absolutePath);
-  const displayPath = relative === ''
-    ? '~'
-    : relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative)
-      ? `~/${relative.split(path.sep).join('/')}`
-      : absolutePath;
-  return shellQuote(displayPath);
+  const isHomePath = relative === ''
+    || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+  const prefix = isHomePath ? '~' : path.parse(absolutePath).root;
+  const pathFromPrefix = isHomePath ? relative : absolutePath.slice(prefix.length);
+  const components = pathFromPrefix.split(path.sep).filter(Boolean).map(shellQuoteComponent);
+  return components.length === 0 ? prefix : `${prefix}${isHomePath ? '/' : ''}${components.join('/')}`;
 }
 
 /** Returns a display string only. The returned shell-style text is never executed. */

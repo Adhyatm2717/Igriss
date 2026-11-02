@@ -35,7 +35,7 @@ describe('renderStep', () => {
     const filePath = path.join(allowedRoot, 'a.png');
     const line = renderStep({ tool: 'delete', args: { path: filePath } }, options);
 
-    expect(line).toBe("$ mv ~/Desktop/a.png '~/.igriss/temp/<uuid>/a.png'");
+    expect(line).toBe("$ mv ~/Desktop/a.png ~/.igriss/temp/'<uuid>'/a.png");
     expect(fs.existsSync(filePath)).toBe(false);
   });
 
@@ -55,7 +55,7 @@ describe('renderStep', () => {
     const from = path.join(allowedRoot, 'a file.txt');
     const to = path.join(allowedRoot, 'other file.txt');
     expect(renderStep({ tool: 'move', args: { from, to } }, options))
-      .toBe("$ mv '~/Desktop/a file.txt' '~/Desktop/other file.txt'");
+      .toBe("$ mv ~/Desktop/'a file.txt' ~/Desktop/'other file.txt'");
     expect(() => renderStep({ tool: 'delete', args: { path: path.join(allowedRoot, '*.txt') } }, options))
       .toThrow(/Glob patterns/);
     expect(() => renderStep({ tool: 'unknown', args: {} }, options)).toThrow(/Unknown tool/);
