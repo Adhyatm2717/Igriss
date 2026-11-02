@@ -250,7 +250,7 @@ describe('adversarial removeEmptyFolder', () => {
     addEntry(folder);
     const before = snapshotTree();
 
-    expect(() => tools.removeEmptyFolder(folder, options)).toThrow(/not empty/);
+    expect(() => tools.removeEmptyFolder(folder, options)).toThrow('Folder is not empty');
     expect(snapshotTree()).toBe(before);
   });
 
