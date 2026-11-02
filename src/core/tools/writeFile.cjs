@@ -1,8 +1,7 @@
 const fs = require('node:fs');
-const path = require('node:path');
+const crypto = require('node:crypto');
 const { assertNotExists, resolveAllowedPath } = require('./pathGuard.cjs');
 const { deletePath } = require('./delete.cjs');
-const { purge } = require('./purge.cjs');
 
 function writeFile(filePath, content, options = {}) {
   const target = resolveAllowedPath(filePath, options);
@@ -11,25 +10,14 @@ function writeFile(filePath, content, options = {}) {
   }
   assertNotExists(target);
   fs.writeFileSync(target, content, { flag: 'wx' });
-  const bytesWritten = Buffer.isBuffer(content) || content instanceof Uint8Array
-    ? content.byteLength
-    : Buffer.byteLength(content);
+  const bytes = Buffer.isBuffer(content) ? content : Buffer.from(content);
+  const bytesWritten = bytes.byteLength;
+  const sha256 = crypto.createHash('sha256').update(bytes).digest('hex');
 
   return {
-    result: { path: target, bytesWritten },
-    inverse: { tool: 'undoWriteFile', args: { path: target, content } }
+    result: { path: target, bytesWritten, sha256 },
+    inverse: { tool: 'delete', args: { path: target, expectedSha256: sha256 } }
   };
 }
 
-function undoWriteFile(filePath, content, options = {}) {
-  const removed = deletePath(filePath, options);
-  const transactionDirectory = path.dirname(removed.result.trashPath);
-  purge(removed.result.trashPath, options);
-  purge(transactionDirectory, options);
-  return {
-    result: { path: removed.result.originalPath },
-    inverse: { tool: 'writeFile', args: { path: removed.result.originalPath, content } }
-  };
-}
-
-module.exports = { undoWriteFile, writeFile };
+module.exports = { writeFile };

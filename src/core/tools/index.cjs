@@ -5,7 +5,7 @@ const { purge } = require('./purge.cjs');
 const { rename } = require('./rename.cjs');
 const { removeEmptyFolder } = require('./removeEmptyFolder.cjs');
 const { renderStep } = require('./renderStep.cjs');
-const { undoWriteFile, writeFile } = require('./writeFile.cjs');
+const { writeFile } = require('./writeFile.cjs');
 
 module.exports = {
   createFolder,
@@ -17,6 +17,5 @@ module.exports = {
   removeEmptyFolder,
   renderStep,
   restore,
-  undoWriteFile,
   writeFile
 };
