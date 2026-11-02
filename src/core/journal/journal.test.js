@@ -102,6 +102,20 @@ describe('action journal', () => {
     expect(fs.readdirSync(desktop)).toEqual([]);
   });
 
+  it('runs a command\'s inverses in reverse step order', () => {
+    const log = journal();
+    const parent = path.join(desktop, 'parent');
+    const child = path.join(parent, 'child');
+    const recorded = log.executeAndRecord('Create nested folders', [
+      { tool: 'createFolder', args: { path: parent } },
+      { tool: 'createFolder', args: { path: child } }
+    ]);
+
+    expect(log.undo(1).undone).toEqual([recorded.entry.id]);
+    expect(fs.existsSync(parent)).toBe(false);
+    expect(log.load()[0].status).toBe('undone');
+  });
+
   it('undoes after loading the journal from disk in a fresh instance', () => {
     const original = journal();
     const recorded = original.executeAndRecord('Create after restart', [createFolderStep('restart')]);
@@ -214,6 +228,26 @@ describe('action journal', () => {
     });
     expect(fs.readFileSync(file, 'utf8')).toBe('new occupant');
     expect(fs.readFileSync(deleted.entry.steps[0].result.trashPath, 'utf8')).toBe('original');
+  });
+
+  it('checks inverse preconditions before calling a tool implementation', () => {
+    const unsafeMove = (from, to) => {
+      fs.renameSync(from, to);
+      return { result: { from, to }, inverse: { tool: 'move', args: { from: to, to: from } } };
+    };
+    const log = journal({ tools: { ...tools, move: unsafeMove } });
+    const source = path.join(desktop, 'source.txt');
+    const destination = path.join(desktop, 'destination.txt');
+    fs.writeFileSync(source, 'original');
+    const recorded = log.executeAndRecord('Move source', [{ tool: 'move', args: { from: source, to: destination } }]);
+    fs.writeFileSync(source, 'new occupant');
+
+    const result = log.undo(1);
+    expect(result.error.message).toMatch(/destination is occupied/);
+    expect(log.load()[0].status).toBe('partially_undone');
+    expect(fs.readFileSync(source, 'utf8')).toBe('new occupant');
+    expect(fs.readFileSync(destination, 'utf8')).toBe('original');
+    expect(recorded.entry.status).toBe('done');
   });
 
   it('keeps earlier entries when appending more commands', () => {
