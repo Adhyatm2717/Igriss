@@ -32,6 +32,7 @@ Deleted files are never removed immediately. They go to a holding folder and are
 | Menu-bar tray icon with Open and Quit | Built |
 | Safe file tools (`move`, `rename`, `createFolder`, `removeEmptyFolder`, `writeFile`, `delete`, `purge`) with path guard | Built, with adversarial and mutation testing |
 | Action journal with undo (last 7 commands) | Built, with adversarial and mutation testing |
+| Bash subset adapter (`mkdir`, `mv`, `rm`), validated plan output, provider retry interface | Built, with sandboxed tests |
 | Plan schema, selectors, validator, executor, lifecycle events | In progress |
 | Plan preview and approve UI wired to the notch | Planned |
 | First end-to-end demo with a fixed task on a dummy folder | Planned |
